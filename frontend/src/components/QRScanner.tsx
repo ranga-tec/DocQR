@@ -83,7 +83,7 @@ export function QRScanner() {
         const documentId = extractDocumentId(decodedText);
 
         if (!documentId) {
-            setError("Invalid QR code format. Expected a document QR code.");
+            setError("No document found for this QR code.");
             setIsLoading(false);
             return;
         }
