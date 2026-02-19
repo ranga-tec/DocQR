@@ -29,7 +29,7 @@ export function DashboardLayout() {
 
             {/* Sidebar */}
             <aside className={cn(
-                "fixed lg:static inset-y-0 left-0 w-64 border-r bg-card z-50 transform transition-transform duration-200 ease-in-out lg:translate-x-0 flex flex-col",
+                "fixed lg:static inset-y-0 left-0 w-64 border-r bg-background z-50 transform transition-transform duration-200 ease-in-out lg:translate-x-0 flex flex-col",
                 sidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}>
                 {/* Logo */}
