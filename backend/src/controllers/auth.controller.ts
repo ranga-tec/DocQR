@@ -92,7 +92,11 @@ export class AuthController {
             });
         } catch (error: any) {
             console.error('Login error in controller:', error);
-            res.status(401).json({ error: error.message });
+            console.error('Stack:', error.stack);
+            res.status(401).json({
+                error: error.message || 'Authentication failed',
+                details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            });
         }
     }
 

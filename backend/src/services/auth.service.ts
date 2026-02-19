@@ -54,7 +54,8 @@ export class AuthService {
      * Login user
      */
     async login(data: LoginDTO): Promise<{ user: any; token: string }> {
-        console.log('AuthService: Finding user:', data.username);
+        console.log('AuthService: Login attempt for:', data.username);
+
         // Find user
         const result = await db.query(
             `SELECT id, username, email, password_hash, role, is_active
@@ -66,22 +67,25 @@ export class AuthService {
         console.log('AuthService: User found:', result.rows.length > 0);
 
         if (result.rows.length === 0) {
+            console.log('AuthService: User not found in DB');
             throw new Error('Invalid credentials');
         }
 
         const user = result.rows[0];
+        console.log('AuthService: User active status:', user.is_active);
 
         // Check if user is active
         if (!user.is_active) {
             throw new Error('Account is deactivated');
         }
 
-        console.log('AuthService: Verifying password...');
+        console.log('AuthService: Verifying password hash...');
         // Verify password
         const isValidPassword = await bcrypt.compare(data.password, user.password_hash);
         console.log('AuthService: Password valid:', isValidPassword);
 
         if (!isValidPassword) {
+            console.log('AuthService: Password mismatch');
             throw new Error('Invalid credentials');
         }
 
@@ -91,10 +95,12 @@ export class AuthService {
         // Generate token
         console.log('AuthService: Generating token...');
         const token = this.generateToken(user);
+        console.log('AuthService: Token generated successfully');
 
         return { user, token };
     }
 
+    // ... (keep getUserById) is not valid TS, restoring full method
     /**
      * Get user by ID
      */
@@ -117,6 +123,12 @@ export class AuthService {
      * Generate JWT token
      */
     private generateToken(user: any): string {
+        console.log('AuthService: Signing token with secret length:', config.jwt.secret?.length);
+        if (!config.jwt.secret) {
+            console.error('CRITICAL: JWT_SECRET is missing!');
+            throw new Error('Server configuration error: JWT_SECRET missing');
+        }
+
         return (jwt.sign as any)(
             {
                 id: user.id,
