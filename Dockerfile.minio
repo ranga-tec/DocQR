@@ -1,0 +1,15 @@
+FROM minio/minio:latest
+
+# Set default credentials (override via Railway env vars)
+ENV MINIO_ROOT_USER=minioadmin
+ENV MINIO_ROOT_PASSWORD=minioadmin123
+
+# Create data directory
+RUN mkdir -p /data
+
+# Expose MinIO API port
+EXPOSE 9000
+EXPOSE 9001
+
+# Start MinIO server
+CMD ["server", "/data", "--console-address", ":9001"]

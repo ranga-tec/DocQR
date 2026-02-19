@@ -6,7 +6,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { db } from './config/database';
-import { minioClient } from './config/minio';
+import { storageClient } from './config/storage';
 
 // Import routes
 import authRoutes from './routes/auth.routes';
@@ -130,13 +130,13 @@ class Server {
         }
     }
 
-    private async initializeMinIO(): Promise<void> {
+    private async initializeStorage(): Promise<void> {
         try {
-            await minioClient.initializeBuckets();
-            console.log('✓ MinIO initialized successfully');
+            await storageClient.initializeBuckets();
+            console.log('✓ Storage initialized successfully');
         } catch (error) {
-            console.warn('⚠ MinIO initialization failed (file uploads will not work):', (error as Error).message);
-            // Non-fatal: app continues without file storage
+            console.warn('⚠ Storage initialization failed (file uploads may not work):', (error as Error).message);
+            // Non-fatal: app continues
         }
     }
 
@@ -145,8 +145,8 @@ class Server {
             // Initialize database
             await this.initializeDatabase();
 
-            // Initialize MinIO
-            await this.initializeMinIO();
+            // Initialize storage (MinIO or local)
+            await this.initializeStorage();
 
             // Start server
             this.app.listen(config.port, () => {
@@ -156,7 +156,7 @@ class Server {
                 console.log(`🌐 Server: http://localhost:${config.port}`);
                 console.log(`📡 API: http://localhost:${config.port}${config.apiPrefix}`);
                 console.log(`🗄️  Database: ${config.database.host}:${config.database.port}`);
-                console.log(`📦 MinIO: ${config.minio.endPoint}:${config.minio.port}`);
+                console.log(`📦 Storage: ${process.env.USE_LOCAL_STORAGE === 'true' ? 'Local Filesystem' : config.minio.endPoint + ':' + config.minio.port}`);
                 console.log('=================================');
             });
         } catch (error) {

@@ -1,5 +1,5 @@
 import { db } from '../config/database';
-import { minioClient } from '../config/minio';
+import { storageClient } from '../config/storage';
 import { qrCodeService } from './qrcode.service';
 import { config } from '../config';
 import { v4 as uuidv4 } from 'uuid';
@@ -45,8 +45,8 @@ export class DocumentService {
             const fileExtension = path.extname(data.file.originalname);
             const minioObjectKey = `${documentId}${fileExtension}`;
 
-            // Upload file to MinIO
-            await minioClient.uploadFile(
+            // Upload file to storage
+            await storageClient.uploadFile(
                 config.minio.buckets.documents,
                 minioObjectKey,
                 data.file.buffer,
@@ -61,8 +61,8 @@ export class DocumentService {
             const { buffer: qrBuffer, data: qrData } = await qrCodeService.generateQRCode(documentId, data.title);
             const qrObjectKey = `${documentId}.png`;
 
-            // Upload QR code to MinIO
-            await minioClient.uploadFile(
+            // Upload QR code to storage
+            await storageClient.uploadFile(
                 config.minio.buckets.qrCodes,
                 qrObjectKey,
                 qrBuffer,
@@ -345,12 +345,12 @@ export class DocumentService {
 
         const doc = document.rows[0];
 
-        // Delete from MinIO
+        // Delete from storage
         try {
-            await minioClient.deleteFile(doc.minio_bucket, doc.minio_object_key);
-            await minioClient.deleteFile(config.minio.buckets.qrCodes, doc.qr_code_path);
+            await storageClient.deleteFile(doc.minio_bucket, doc.minio_object_key);
+            await storageClient.deleteFile(config.minio.buckets.qrCodes, doc.qr_code_path);
         } catch (error) {
-            console.error('Error deleting files from MinIO:', error);
+            console.error('Error deleting files from storage:', error);
         }
 
         // Delete from database (cascade will delete tags)
@@ -369,7 +369,7 @@ export class DocumentService {
             return null;
         }
 
-        const stream = await minioClient.getFile(document.minio_bucket, document.minio_object_key);
+        const stream = await storageClient.getFile(document.minio_bucket, document.minio_object_key);
 
         return { stream, document };
     }
@@ -384,7 +384,7 @@ export class DocumentService {
             return null;
         }
 
-        return await minioClient.getFile(config.minio.buckets.qrCodes, document.qr_code_path);
+        return await storageClient.getFile(config.minio.buckets.qrCodes, document.qr_code_path);
     }
 }
 
