@@ -78,9 +78,16 @@ export class AuthController {
      *         description: Login successful
      */
     async login(req: Request, res: Response): Promise<void> {
-        console.log('Login request received for:', req.body.username);
+        console.log('Login request received for:', req.body?.username);
+        console.log('Request Headers:', JSON.stringify(req.headers));
+
         try {
             const { username, password } = req.body;
+
+            if (!username || !password) {
+                console.log('Missing credentials in body:', req.body);
+                throw new Error('Username and password are required');
+            }
 
             const result = await authService.login({ username, password });
             console.log('Login successful for:', username);
@@ -92,10 +99,18 @@ export class AuthController {
             });
         } catch (error: any) {
             console.error('Login error in controller:', error);
-            console.error('Stack:', error.stack);
+
+            // Safe error serialization
+            const errorObj = {
+                message: error.message || 'Unknown error',
+                stack: error.stack,
+                name: error.name
+            };
+
             res.status(401).json({
-                error: error.message || 'Authentication failed',
-                details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+                error: errorObj,
+                debug_body: req.body,
+                debug_env: process.env.NODE_ENV
             });
         }
     }
