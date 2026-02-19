@@ -1,6 +1,6 @@
-import { useState } from "react"
-import { Outlet, NavLink, useNavigate } from "react-router-dom"
-import { QrCode, FileText, Settings, LogOut, Menu, X, Home, FolderOpen, Search, User, Bell } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom"
+import { QrCode, FileText, Settings, LogOut, Menu, X, Home, FolderOpen, Search, User, Bell, PlusCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -10,7 +10,12 @@ import { useAuth } from "@/context/AuthContext"
 export function DashboardLayout() {
     const { user } = useAuth()
     const [sidebarOpen, setSidebarOpen] = useState(false)
+    const location = useLocation()
     const navigate = useNavigate()
+
+    useEffect(() => {
+        setSidebarOpen(false)
+    }, [location.pathname, location.search])
 
     const handleLogout = () => {
         // In a real app, clear auth here
@@ -18,19 +23,18 @@ export function DashboardLayout() {
     }
 
     return (
-        <div className="flex h-screen bg-background overflow-hidden">
+        <div className="flex min-h-dvh bg-background overflow-hidden">
             {/* Sidebar Overlay */}
             {sidebarOpen && (
                 <div
-                    className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+                    className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[1px] lg:hidden"
                     onClick={() => setSidebarOpen(false)}
                 />
             )}
 
             <aside
-                style={{ backgroundColor: 'Canvas' }}
                 className={cn(
-                    "fixed lg:static inset-y-0 left-0 w-64 border-r !bg-white !dark:bg-zinc-950 shadow-xl z-50 transform transition-transform duration-200 ease-in-out lg:translate-x-0 flex flex-col",
+                    "fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] border-r bg-background shadow-2xl transform transition-transform duration-200 ease-out lg:static lg:w-64 lg:max-w-none lg:translate-x-0 lg:shadow-none flex flex-col",
                     sidebarOpen ? "translate-x-0" : "-translate-x-full"
                 )}>
                 {/* Logo */}
@@ -51,6 +55,7 @@ export function DashboardLayout() {
                 <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
                     <NavItem to="/" icon={<Home className="h-4 w-4" />} label="Dashboard" />
                     <NavItem to="/documents" icon={<FileText className="h-4 w-4" />} label="All Documents" />
+                    <NavItem to="/documents?new=1" icon={<PlusCircle className="h-4 w-4" />} label="New Document" />
                     <NavItem to="/scan" icon={<QrCode className="h-4 w-4" />} label="Quick Scan" />
                     <NavItem to="/categories" icon={<FolderOpen className="h-4 w-4" />} label="Categories" />
 
