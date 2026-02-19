@@ -7,10 +7,15 @@ export class QRCodeService {
      * @param documentId - The document UUID
      * @returns Buffer containing the QR code image and the data encoded
      */
-    async generateQRCode(documentId: string): Promise<{ buffer: Buffer; data: string }> {
+    async generateQRCode(documentId: string, documentName?: string): Promise<{ buffer: Buffer; data: string }> {
         try {
             // Create the QR code data - URL to view the document
-            const qrData = `${config.qrCode.appBaseUrl}/document/${documentId}`;
+            let qrData = `${config.qrCode.appBaseUrl}/document/${documentId}`;
+
+            if (documentName) {
+                // Add name as query parameter, ensuring it's properly encoded
+                qrData += `?name=${encodeURIComponent(documentName)}`;
+            }
 
             // Generate QR code as buffer
             const buffer = await QRCode.toBuffer(qrData, {
@@ -37,11 +42,16 @@ export class QRCodeService {
     /**
      * Generate QR code as Data URL (base64)
      * @param documentId - The document UUID
+     * @param documentName - Optional document name to include
      * @returns Data URL string
      */
-    async generateQRCodeDataURL(documentId: string): Promise<string> {
+    async generateQRCodeDataURL(documentId: string, documentName?: string): Promise<string> {
         try {
-            const qrData = `${config.qrCode.appBaseUrl}/document/${documentId}`;
+            let qrData = `${config.qrCode.appBaseUrl}/document/${documentId}`;
+
+            if (documentName) {
+                qrData += `?name=${encodeURIComponent(documentName)}`;
+            }
 
             const dataURL = await QRCode.toDataURL(qrData, {
                 errorCorrectionLevel: config.qrCode.errorCorrectionLevel,

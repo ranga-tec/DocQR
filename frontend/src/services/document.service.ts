@@ -120,6 +120,29 @@ export const documentService = {
         }
     },
 
+    print: async (id: string) => {
+        try {
+            const response = await api.get(`/documents/${id}/download`, {
+                responseType: 'blob',
+            });
+
+            const file = new Blob([response.data], { type: response.headers['content-type'] || 'application/pdf' });
+            const url = window.URL.createObjectURL(file);
+
+            // Open in new window specifically for printing if possible, or just normal view
+            const printWindow = window.open(url, '_blank');
+            if (printWindow) {
+                // Determine if it's an image or PDF. 
+                // If it's an image, we can try to auto-print.
+                // For PDF, browser viewer handles it.
+                // We'll just let the user print from the new tab for reliability.
+            }
+        } catch (error) {
+            console.error("Print failed:", error);
+            alert("Failed to print document.");
+        }
+    },
+
     getQRCode: async (id: string) => {
         try {
             const response = await api.get(`/documents/${id}/qr`, {

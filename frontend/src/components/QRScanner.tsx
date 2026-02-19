@@ -3,7 +3,7 @@ import { Html5Qrcode } from "html5-qrcode";
 import { documentService, Document } from "@/services/document.service";
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, QrCode, RefreshCw, AlertCircle, CheckCircle2, Eye, Camera, Image as ImageIcon, X } from "lucide-react";
+import { Download, QrCode, RefreshCw, AlertCircle, CheckCircle2, Eye, Camera, Image as ImageIcon, X, Printer } from "lucide-react";
 import { format } from "date-fns";
 
 /**
@@ -113,8 +113,8 @@ export function QRScanner() {
             await scannerRef.current.start(
                 { facingMode: "environment" },
                 {
-                    fps: 10,
-                    qrbox: { width: 250, height: 250 },
+                    fps: 15,
+                    qrbox: { width: 400, height: 400 },
                 },
                 handleScanSuccess,
                 () => { } // Ignore failures
@@ -175,7 +175,7 @@ export function QRScanner() {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center gap-8 w-full max-w-md mx-auto">
+        <div className="flex flex-col items-center justify-center gap-8 w-full max-w-4xl mx-auto">
             {/* Initial Selection UI */}
             {!scanResult && !isLoading && mode === 'idle' && !error && (
                 <Card className="w-full">
@@ -209,13 +209,13 @@ export function QRScanner() {
 
             {/* Camera View */}
             <div className={mode === 'camera' ? 'block w-full' : 'hidden'}>
-                <div className="relative">
-                    <div id="reader-custom" className="w-[300px] h-[300px] border-2 border-primary rounded-xl overflow-hidden shadow-lg mx-auto bg-black"></div>
+                <div className="relative mx-auto w-full max-w-[800px]">
+                    <div id="reader-custom" className="w-full h-[600px] border-2 border-primary rounded-xl overflow-hidden shadow-lg bg-black"></div>
 
                     {/* Only show overlay when actually scanning with camera */}
                     {scanning && (
                         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                            <div className="w-48 h-48 border-2 border-primary/50 rounded-lg animate-pulse shadow-[0_0_0_1000px_rgba(0,0,0,0.5)]"></div>
+                            <div className="w-[500px] h-[500px] border-2 border-primary/50 rounded-lg animate-pulse shadow-[0_0_0_1000px_rgba(0,0,0,0.5)]"></div>
                         </div>
                     )}
 
@@ -325,13 +325,22 @@ export function QRScanner() {
 
                         {/* Actions */}
                         <div className="flex flex-col gap-2">
-                            <Button
-                                onClick={() => documentService.view(scanResult.id)}
-                                className="w-full"
-                                variant="default"
-                            >
-                                <Eye className="h-4 w-4 mr-2" /> View Document
-                            </Button>
+                            <div className="flex gap-2">
+                                <Button
+                                    onClick={() => documentService.view(scanResult.id)}
+                                    className="flex-1"
+                                    variant="default"
+                                >
+                                    <Eye className="h-4 w-4 mr-2" /> View
+                                </Button>
+                                <Button
+                                    onClick={() => documentService.print(scanResult.id)}
+                                    className="flex-1"
+                                    variant="secondary"
+                                >
+                                    <Printer className="h-4 w-4 mr-2" /> Print
+                                </Button>
+                            </div>
 
                             <div className="flex gap-2">
                                 <Button
@@ -346,7 +355,7 @@ export function QRScanner() {
                                     onClick={resetScan}
                                     className="flex-1"
                                 >
-                                    <QrCode className="h-4 w-4 mr-2" /> Scan Another
+                                    <QrCode className="h-4 w-4 mr-2" /> Scan
                                 </Button>
                             </div>
                         </div>

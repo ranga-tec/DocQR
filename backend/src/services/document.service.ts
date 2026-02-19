@@ -58,7 +58,7 @@ export class DocumentService {
             );
 
             // Generate QR code
-            const { buffer: qrBuffer, data: qrData } = await qrCodeService.generateQRCode(documentId);
+            const { buffer: qrBuffer, data: qrData } = await qrCodeService.generateQRCode(documentId, data.title);
             const qrObjectKey = `${documentId}.png`;
 
             // Upload QR code to MinIO

@@ -451,3 +451,5 @@ For issues and questions, please open an issue on GitHub.
 ---
 
 **Built with ❤️ for efficient document management**
+#   D o c Q R  
+ 
