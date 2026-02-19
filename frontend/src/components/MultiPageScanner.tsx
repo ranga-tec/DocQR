@@ -2,8 +2,7 @@ import { useRef, useState, useCallback } from "react";
 import Webcam from "react-webcam";
 import { jsPDF } from "jspdf";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Camera, FilePlus, Save, Trash2, CheckCircle2, XCircle } from "lucide-react";
+import { Camera, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MultiPageScannerProps {
@@ -14,7 +13,7 @@ interface MultiPageScannerProps {
 export function MultiPageScanner({ onDocumentCreated, onCancel }: MultiPageScannerProps) {
     const webcamRef = useRef<Webcam>(null);
     const [pages, setPages] = useState<string[]>([]); // Array of base64 images
-    const [isCapturing, setIsCapturing] = useState(true);
+
     const [currentViewIndex, setCurrentViewIndex] = useState<number | null>(null);
 
     const capture = useCallback(() => {
@@ -41,7 +40,7 @@ export function MultiPageScanner({ onDocumentCreated, onCancel }: MultiPageScann
         });
 
         const pdfWidth = doc.internal.pageSize.getWidth();
-        const pdfHeight = doc.internal.pageSize.getHeight();
+        doc.internal.pageSize.getHeight(); // height used implicitly for aspect ratio
 
         pages.forEach((pageData, index) => {
             if (index > 0) doc.addPage();

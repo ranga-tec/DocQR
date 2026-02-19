@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, FileText, Download, Users, FolderOpen, HardDrive, RefreshCw } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import { adminService } from "@/services/admin.service";
 import { documentService, Document } from "@/services/document.service";
 import { useNavigate } from "react-router-dom";

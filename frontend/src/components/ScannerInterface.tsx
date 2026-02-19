@@ -24,7 +24,7 @@ export function ScannerInterface({ onScanComplete, onCancel }: ScannerInterfaceP
 
     // UI State
     const [scannedImage, setScannedImage] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const [_error, setError] = useState<string | null>(null);
 
     // Initial Load
     useEffect(() => {
