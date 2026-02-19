@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -123,13 +123,23 @@ export class AuthService {
      * Generate JWT token
      */
     private generateToken(user: any): string {
-        console.log('AuthService: Signing token with secret length:', config.jwt.secret?.length);
+        console.log('JWT Lib Type:', typeof jwt);
+        console.log('JWT Lib Keys:', Object.keys(jwt));
+
         if (!config.jwt.secret) {
             console.error('CRITICAL: JWT_SECRET is missing!');
             throw new Error('Server configuration error: JWT_SECRET missing');
         }
 
-        return (jwt.sign as any)(
+        // Handle different import styles
+        const sign = (jwt as any).default?.sign || jwt.sign;
+
+        if (!sign) {
+            console.error('JWT sign function not found!', jwt);
+            throw new Error('JWT library import failed');
+        }
+
+        return sign(
             {
                 id: user.id,
                 username: user.username,
