@@ -27,11 +27,12 @@ export function DashboardLayout() {
                 />
             )}
 
-            {/* Sidebar */}
-            <aside className={cn(
-                "fixed lg:static inset-y-0 left-0 w-64 border-r !bg-white !dark:bg-zinc-950 shadow-xl z-50 transform transition-transform duration-200 ease-in-out lg:translate-x-0 flex flex-col",
-                sidebarOpen ? "translate-x-0" : "-translate-x-full"
-            )}>
+            <aside
+                style={{ backgroundColor: 'Canvas' }}
+                className={cn(
+                    "fixed lg:static inset-y-0 left-0 w-64 border-r !bg-white !dark:bg-zinc-950 shadow-xl z-50 transform transition-transform duration-200 ease-in-out lg:translate-x-0 flex flex-col",
+                    sidebarOpen ? "translate-x-0" : "-translate-x-full"
+                )}>
                 {/* Logo */}
                 <div className="h-16 flex items-center px-6 border-b">
                     <div className="bg-primary text-primary-foreground p-1.5 rounded-lg mr-3">
