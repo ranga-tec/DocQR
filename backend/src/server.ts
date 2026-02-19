@@ -135,8 +135,8 @@ class Server {
             await minioClient.initializeBuckets();
             console.log('✓ MinIO initialized successfully');
         } catch (error) {
-            console.error('✗ MinIO initialization failed:', error);
-            process.exit(1);
+            console.warn('⚠ MinIO initialization failed (file uploads will not work):', (error as Error).message);
+            // Non-fatal: app continues without file storage
         }
     }
 
