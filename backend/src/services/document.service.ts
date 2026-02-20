@@ -40,70 +40,102 @@ export class DocumentService {
      * Create a new document with QR code
      */
     async createDocument(data: CreateDocumentDTO): Promise<any> {
+        console.log('📝 createDocument started', { title: data.title, fileSize: data.file.size, userId: data.userId });
+
         return await db.transaction(async (client) => {
             const documentId = uuidv4();
             const fileExtension = path.extname(data.file.originalname);
             const minioObjectKey = `${documentId}${fileExtension}`;
 
             // Upload file to storage
-            await storageClient.uploadFile(
-                config.minio.buckets.documents,
-                minioObjectKey,
-                data.file.buffer,
-                data.file.size,
-                {
-                    'Content-Type': data.file.mimetype,
-                    'Original-Name': data.file.originalname,
-                }
-            );
+            try {
+                console.log(`📂 Uploading file to ${config.minio.buckets.documents}/${minioObjectKey}...`);
+                await storageClient.uploadFile(
+                    config.minio.buckets.documents,
+                    minioObjectKey,
+                    data.file.buffer,
+                    data.file.size,
+                    {
+                        'Content-Type': data.file.mimetype,
+                        'Original-Name': data.file.originalname,
+                    }
+                );
+            } catch (err: any) {
+                throw new Error(`Storage upload failed: ${err.message}`);
+            }
 
             // Generate QR code
-            const { buffer: qrBuffer, data: qrData } = await qrCodeService.generateQRCode(documentId, data.title);
+            let qrBuffer, qrData;
+            try {
+                console.log('🔳 Generating QR code...');
+                const qrResult = await qrCodeService.generateQRCode(documentId, data.title);
+                qrBuffer = qrResult.buffer;
+                qrData = qrResult.data;
+            } catch (err: any) {
+                throw new Error(`QR generation failed: ${err.message}`);
+            }
+
             const qrObjectKey = `${documentId}.png`;
 
             // Upload QR code to storage
-            await storageClient.uploadFile(
-                config.minio.buckets.qrCodes,
-                qrObjectKey,
-                qrBuffer,
-                qrBuffer.length,
-                { 'Content-Type': 'image/png' }
-            );
+            try {
+                console.log(`📂 Uploading QR to ${config.minio.buckets.qrCodes}/${qrObjectKey}...`);
+                await storageClient.uploadFile(
+                    config.minio.buckets.qrCodes,
+                    qrObjectKey,
+                    qrBuffer,
+                    qrBuffer.length,
+                    { 'Content-Type': 'image/png' }
+                );
+            } catch (err: any) {
+                throw new Error(`QR storage upload failed: ${err.message}`);
+            }
 
             // Insert document record
-            await client.query(
-                `INSERT INTO documents 
-         (id, title, description, category_id, file_name, file_size, mime_type, 
-          minio_bucket, minio_object_key, qr_code_path, qr_code_data, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-         RETURNING *`,
-                [
-                    documentId,
-                    data.title,
-                    data.description || null,
-                    data.categoryId || null,
-                    data.file.originalname,
-                    data.file.size,
-                    data.file.mimetype,
-                    config.minio.buckets.documents,
-                    minioObjectKey,
-                    qrObjectKey,
-                    qrData,
-                    data.userId,
-                    data.userId,
-                ]
-            );
+            try {
+                console.log('💾 Inserting document record into DB...');
+                await client.query(
+                    `INSERT INTO documents 
+             (id, title, description, category_id, file_name, file_size, mime_type, 
+              minio_bucket, minio_object_key, qr_code_path, qr_code_data, created_by, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             RETURNING *`,
+                    [
+                        documentId,
+                        data.title,
+                        data.description || null,
+                        data.categoryId || null,
+                        data.file.originalname,
+                        data.file.size,
+                        data.file.mimetype,
+                        config.minio.buckets.documents,
+                        minioObjectKey,
+                        qrObjectKey,
+                        qrData,
+                        data.userId,
+                        data.userId,
+                    ]
+                );
+            } catch (err: any) {
+                throw new Error(`Database insert failed: ${err.message}`);
+            }
 
             // Insert tags if provided
             if (data.tags && data.tags.length > 0) {
-                for (const tag of data.tags) {
-                    await client.query(
-                        `INSERT INTO document_tags (document_id, tag) VALUES ($1, $2)`,
-                        [documentId, tag.trim().toLowerCase()]
-                    );
+                try {
+                    for (const tag of data.tags) {
+                        await client.query(
+                            `INSERT INTO document_tags (document_id, tag) VALUES ($1, $2)`,
+                            [documentId, tag.trim().toLowerCase()]
+                        );
+                    }
+                } catch (err: any) {
+                    // Non-fatal? Maybe warnings. But let's fail for consistency.
+                    throw new Error(`Tag insertion failed: ${err.message}`);
                 }
             }
 
+            console.log('✅ createDocument completed successfully');
             return await this.getDocumentById(documentId);
         });
     }
