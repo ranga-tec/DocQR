@@ -68,6 +68,11 @@ class Server {
             res.status(200).json({
                 status: 'OK',
                 storage: storageType,
+                minio: {
+                    endpoint: config.minio.endPoint,
+                    port: config.minio.port,
+                    useSSL: config.minio.useSSL
+                },
                 timestamp: new Date().toISOString(),
                 uptime: process.uptime(),
             });
