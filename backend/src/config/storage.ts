@@ -17,7 +17,10 @@ export interface StorageClient {
     getClient(): any;
 }
 
-const useLocalStorage = process.env.USE_LOCAL_STORAGE === 'true';
+// Fallback to local storage if explicitly requested OR if we are in production but MinIO is not configured (still localhost)
+const isProduction = process.env.NODE_ENV === 'production';
+const isMinioConfigured = process.env.MINIO_ENDPOINT && !process.env.MINIO_ENDPOINT.includes('localhost');
+const useLocalStorage = process.env.USE_LOCAL_STORAGE === 'true' || (isProduction && !isMinioConfigured);
 
 export const storageClient: StorageClient = useLocalStorage ? localStorageClient : minioClient;
 
