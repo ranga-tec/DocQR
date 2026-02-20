@@ -5,6 +5,15 @@ import { config } from '../config';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 
+export class StorageObjectNotFoundError extends Error {
+    public readonly code = 'STORAGE_OBJECT_NOT_FOUND';
+
+    constructor(message: string) {
+        super(message);
+        this.name = 'StorageObjectNotFoundError';
+    }
+}
+
 export interface CreateDocumentDTO {
     title: string;
     description?: string;
@@ -401,6 +410,11 @@ export class DocumentService {
             return null;
         }
 
+        const fileExists = await storageClient.fileExists(document.minio_bucket, document.minio_object_key);
+        if (!fileExists) {
+            throw new StorageObjectNotFoundError(`Document file is missing in storage: ${document.minio_object_key}`);
+        }
+
         const stream = await storageClient.getFile(document.minio_bucket, document.minio_object_key);
 
         return { stream, document };
@@ -414,6 +428,11 @@ export class DocumentService {
 
         if (!document) {
             return null;
+        }
+
+        const qrExists = await storageClient.fileExists(config.minio.buckets.qrCodes, document.qr_code_path);
+        if (!qrExists) {
+            throw new StorageObjectNotFoundError(`QR image is missing in storage: ${document.qr_code_path}`);
         }
 
         return await storageClient.getFile(config.minio.buckets.qrCodes, document.qr_code_path);

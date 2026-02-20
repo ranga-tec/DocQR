@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { documentService } from '../services/document.service';
+import { documentService, StorageObjectNotFoundError } from '../services/document.service';
 import { AuthRequest } from '../middleware/auth';
 
 export class DocumentController {
@@ -191,7 +191,15 @@ export class DocumentController {
 
             result.stream.pipe(res);
         } catch (error: any) {
-            res.status(500).json({ error: error.message });
+            if (error instanceof StorageObjectNotFoundError) {
+                res.status(404).json({
+                    error: 'Document file is not available in storage. Please re-upload this document.',
+                });
+                return;
+            }
+
+            console.error('Download document error:', error);
+            res.status(500).json({ error: 'Failed to download document' });
         }
     }
 
@@ -214,7 +222,15 @@ export class DocumentController {
 
             stream.pipe(res);
         } catch (error: any) {
-            res.status(500).json({ error: error.message });
+            if (error instanceof StorageObjectNotFoundError) {
+                res.status(404).json({
+                    error: 'QR image is not available in storage. Re-generate this document QR.',
+                });
+                return;
+            }
+
+            console.error('Download QR error:', error);
+            res.status(500).json({ error: 'Failed to download QR code' });
         }
     }
 }

@@ -32,6 +32,26 @@ export interface DocumentListResponse {
     limit: number;
 }
 
+const getApiErrorMessage = async (error: any, fallback: string): Promise<string> => {
+    const responseData = error?.response?.data;
+
+    if (responseData instanceof Blob) {
+        try {
+            const text = await responseData.text();
+            const parsed = JSON.parse(text);
+            if (parsed?.error) return parsed.error;
+        } catch {
+            // Ignore blob parsing errors and use fallback
+        }
+    }
+
+    if (typeof responseData?.error === "string") {
+        return responseData.error;
+    }
+
+    return fallback;
+};
+
 export const documentService = {
     getAll: async (params?: { page: number; limit: number; search?: string; categoryId?: string }): Promise<DocumentListResponse> => {
         const { data } = await api.get("/documents", { params });
@@ -99,9 +119,10 @@ export const documentService = {
             link.click();
             link.remove();
             window.URL.revokeObjectURL(url);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Download failed:", error);
-            alert("Failed to download document. Please try again.");
+            const message = await getApiErrorMessage(error, "Failed to download document. Please try again.");
+            alert(message);
         }
     },
 
@@ -114,9 +135,10 @@ export const documentService = {
             const file = new Blob([response.data], { type: response.headers['content-type'] || 'application/pdf' });
             const url = window.URL.createObjectURL(file);
             window.open(url, '_blank');
-        } catch (error) {
+        } catch (error: any) {
             console.error("View failed:", error);
-            alert("Failed to view document.");
+            const message = await getApiErrorMessage(error, "Failed to view document.");
+            alert(message);
         }
     },
 
@@ -137,9 +159,10 @@ export const documentService = {
                 // For PDF, browser viewer handles it.
                 // We'll just let the user print from the new tab for reliability.
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Print failed:", error);
-            alert("Failed to print document.");
+            const message = await getApiErrorMessage(error, "Failed to print document.");
+            alert(message);
         }
     },
 
@@ -156,9 +179,10 @@ export const documentService = {
             // Note: We don't revoke immediately to let the new tab load it, 
             // strictly speaking we should manage this lifecycle but for simple view it's often ok.
             // A better UX might be a modal dialg with the image.
-        } catch (error) {
+        } catch (error: any) {
             console.error("QR Code load failed:", error);
-            alert("Failed to load QR code.");
+            const message = await getApiErrorMessage(error, "Failed to load QR code.");
+            alert(message);
         }
     },
 };
