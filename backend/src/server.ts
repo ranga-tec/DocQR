@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { db } from './config/database';
 import { storageClient } from './config/storage';
+import { checkAndRepairSchema } from './utils/schema-repair';
 
 // Import routes
 import authRoutes from './routes/auth.routes';
@@ -124,6 +125,10 @@ class Server {
         try {
             await db.query('SELECT NOW()');
             console.log('✓ Database connected successfully');
+
+            // Auto-heal schema (fix missing columns)
+            await checkAndRepairSchema();
+
         } catch (error) {
             console.error('✗ Database connection failed:', error);
             process.exit(1);
