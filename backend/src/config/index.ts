@@ -2,10 +2,32 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const isRailway =
+    Boolean(process.env.RAILWAY_PROJECT_ID) ||
+    Boolean(process.env.RAILWAY_SERVICE_ID) ||
+    Boolean(process.env.RAILWAY_ENVIRONMENT);
+
+const resolveTrustProxy = (): boolean | number | string => {
+    const raw = process.env.TRUST_PROXY;
+
+    if (raw === undefined) {
+        return isRailway ? 1 : false;
+    }
+
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+
+    const numeric = Number(raw);
+    if (!Number.isNaN(numeric)) return numeric;
+
+    return raw;
+};
+
 export const config = {
-    env: process.env.NODE_ENV || 'development',
+    env: process.env.NODE_ENV || (isRailway ? 'production' : 'development'),
     port: parseInt(process.env.PORT || '3000', 10),
     apiPrefix: process.env.API_PREFIX || '/api',
+    trustProxy: resolveTrustProxy(),
 
     database: {
         host: process.env.DB_HOST || 'localhost',

@@ -17,10 +17,19 @@ export interface StorageClient {
     getClient(): any;
 }
 
-// Fallback to local storage if explicitly requested OR if we are in production but MinIO is not configured (still localhost)
-const isProduction = process.env.NODE_ENV === 'production';
-const isMinioConfigured = process.env.MINIO_ENDPOINT && !process.env.MINIO_ENDPOINT.includes('localhost');
-const useLocalStorage = process.env.USE_LOCAL_STORAGE === 'true' || (isProduction && !isMinioConfigured);
+const minioEndpoint = (process.env.MINIO_ENDPOINT || '').trim().toLowerCase();
+const minioEndpointLooksLocal =
+    minioEndpoint === '' ||
+    minioEndpoint === 'localhost' ||
+    minioEndpoint === '127.0.0.1' ||
+    minioEndpoint === '::1';
+
+const forceLocalStorage = process.env.USE_LOCAL_STORAGE === 'true';
+const forceMinio = process.env.USE_MINIO === 'true';
+
+// Default to local storage when MinIO endpoint is local/missing.
+// This avoids Railway upload failures when MinIO service is not configured.
+const useLocalStorage = forceLocalStorage || (!forceMinio && minioEndpointLooksLocal);
 
 export const storageClient: StorageClient = useLocalStorage ? localStorageClient : minioClient;
 

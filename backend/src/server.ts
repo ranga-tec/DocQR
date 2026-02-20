@@ -28,6 +28,9 @@ class Server {
     }
 
     private initializeMiddlewares(): void {
+        // Required behind Railway/load balancers for correct client IP handling.
+        this.app.set('trust proxy', config.trustProxy);
+
         // Security
         this.app.use(helmet());
 
