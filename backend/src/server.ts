@@ -162,7 +162,7 @@ class Server {
                 console.log(`🌐 Server: http://localhost:${config.port}`);
                 console.log(`📡 API: http://localhost:${config.port}${config.apiPrefix}`);
                 console.log(`🗄️  Database: ${config.database.host}:${config.database.port}`);
-                console.log(`📦 Storage: ${process.env.USE_LOCAL_STORAGE === 'true' ? 'Local Filesystem' : config.minio.endPoint + ':' + config.minio.port}`);
+                console.log(`📦 Storage: ${storageType === 'local' ? 'Local Filesystem' : `MinIO (${config.minio.endPoint}:${config.minio.port})`}`);
                 console.log('=================================');
             });
         } catch (error) {

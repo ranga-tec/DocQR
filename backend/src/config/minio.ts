@@ -7,9 +7,9 @@ class MinioClient {
 
     constructor() {
         this.client = new Minio.Client({
-            endPoint: config.minio.endPoint,
+            endPoint: config.minio.endPoint.replace(/^https?:\/\//, ''),
             port: config.minio.port,
-            useSSL: config.minio.useSSL,
+            useSSL: config.minio.useSSL || config.minio.endPoint.startsWith('https://'),
             accessKey: config.minio.accessKey,
             secretKey: config.minio.secretKey,
         });

@@ -7,7 +7,7 @@
 import { minioClient } from './minio';
 import { localStorageClient } from './local-storage';
 
-const useLocalStorage = true; // process.env.USE_LOCAL_STORAGE === 'true' || ... (Forcing Local Storage to debug Railway)
+const useLocalStorage = process.env.USE_LOCAL_STORAGE === 'true';
 
 export const storageClient = useLocalStorage ? localStorageClient : minioClient;
 
