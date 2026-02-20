@@ -32,7 +32,15 @@ class Server {
         this.app.set('trust proxy', config.trustProxy);
 
         // Security
-        this.app.use(helmet());
+        this.app.use(helmet({
+            contentSecurityPolicy: {
+                useDefaults: true,
+                directives: {
+                    // Needed for QR scan from uploaded files (blob: object URLs in browser)
+                    imgSrc: ["'self'", "data:", "blob:"],
+                },
+            },
+        }));
 
         // CORS
         this.app.use(cors({
