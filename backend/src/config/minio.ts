@@ -8,8 +8,8 @@ class MinioClient {
     constructor() {
         this.client = new Minio.Client({
             endPoint: config.minio.endPoint.replace(/^https?:\/\//, ''),
-            port: config.minio.port,
-            useSSL: config.minio.useSSL || config.minio.endPoint.startsWith('https://'),
+            port: (config.minio.port === 443 || config.minio.port === 80) ? undefined : config.minio.port,
+            useSSL: config.minio.useSSL || config.minio.endPoint.startsWith('https://') || config.minio.port === 443,
             accessKey: config.minio.accessKey,
             secretKey: config.minio.secretKey,
         });
