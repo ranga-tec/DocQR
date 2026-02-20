@@ -6,7 +6,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { db } from './config/database';
-import { storageClient } from './config/storage';
+import { storageClient, storageType } from './config/storage';
 import { checkAndRepairSchema } from './utils/schema-repair';
 
 // Import routes
@@ -67,6 +67,7 @@ class Server {
         this.app.get('/health', (_req: Request, res: Response) => {
             res.status(200).json({
                 status: 'OK',
+                storage: storageType,
                 timestamp: new Date().toISOString(),
                 uptime: process.uptime(),
             });
