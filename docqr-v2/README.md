@@ -54,8 +54,13 @@ docqr-v2/
 │   │       ├── modules/     # Feature modules
 │   │       ├── common/      # Shared guards, decorators
 │   │       └── config/      # Configuration
-│   ├── web/                 # React frontend (TBD)
-│   └── doc-processor/       # Document processing (TBD)
+│   ├── web/                 # React frontend
+│   │   └── src/
+│   │       ├── components/  # UI components
+│   │       ├── pages/       # Page components
+│   │       ├── hooks/       # Custom hooks
+│   │       └── lib/         # API client, utilities
+│   └── doc-processor/       # Document processing (Phase 2)
 ├── packages/
 │   ├── database/            # Prisma schema & client
 │   └── shared/              # Shared types & enums
@@ -181,6 +186,21 @@ OPEN → IN_REVIEW → FORWARDED ↔ (chain)
          ↓
       CLOSED → ARCHIVED
 ```
+
+## Documentation
+
+Comprehensive documentation is available in the [docs/](docs/) folder:
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture, design patterns, security |
+| [API.md](docs/API.md) | Complete API reference with examples |
+| [DATABASE.md](docs/DATABASE.md) | Database schema, tables, relationships |
+| [MODULES.md](docs/MODULES.md) | Backend module documentation |
+| [FRONTEND.md](docs/FRONTEND.md) | React frontend architecture and components |
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deployment guide (Railway, Docker, etc.) |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Development workflow and best practices |
+| [CONFIGURATION.md](docs/CONFIGURATION.md) | Environment variables reference |
 
 ## License
 
