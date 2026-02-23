@@ -58,7 +58,17 @@ export class QrCodeService {
 
     try {
       const buffer = await QRCode.toBuffer(scanUrl, options);
-      const dataUrl = await QRCode.toDataURL(scanUrl, options);
+      const dataUrlOptions: QRCode.QRCodeToDataURLOptions = {
+        errorCorrectionLevel: this.errorCorrection as 'L' | 'M' | 'Q' | 'H',
+        type: 'image/png',
+        width: this.size,
+        margin: 2,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF',
+        },
+      };
+      const dataUrl = await QRCode.toDataURL(scanUrl, dataUrlOptions);
 
       this.logger.log(`QR code generated for docket: ${docketId}`);
 
