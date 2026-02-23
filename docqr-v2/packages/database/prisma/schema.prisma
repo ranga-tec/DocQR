@@ -1,0 +1,746 @@
+// ============================================
+// DOCQR V2 - DATABASE SCHEMA
+// Hybrid Physical-to-Digital Document Workflow System
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  username          String    @unique
+  passwordHash      String    @map("password_hash")
+  firstName         String?   @map("first_name")
+  lastName          String?   @map("last_name")
+  phone             String?
+  avatar            String?
+  isActive          Boolean   @default(true) @map("is_active")
+  lastLoginAt       DateTime? @map("last_login_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
+
+  // Relations
+  userRoles         UserRole[]
+  userDepartments   UserDepartment[]
+
+  // Dockets
+  createdDockets    Docket[]           @relation("DocketCreatedBy")
+  updatedDockets    Docket[]           @relation("DocketUpdatedBy")
+  closedDockets     Docket[]           @relation("DocketClosedBy")
+  assignedDockets   Docket[]           @relation("DocketCurrentAssignee")
+
+  // Attachments
+  uploadedAttachments DocketAttachment[] @relation("AttachmentUploadedBy")
+  editedAttachments   DocketAttachment[] @relation("AttachmentLastEditedBy")
+  signedAttachments   DocketAttachment[] @relation("AttachmentSignedBy")
+
+  // Comments
+  comments          DocketComment[]
+
+  // Assignments
+  assignedTo        DocketAssignment[] @relation("AssignedToUser")
+  assignedBy        DocketAssignment[] @relation("AssignedByUser")
+
+  // Workflow
+  transitions       WorkflowTransition[] @relation("TransitionPerformedBy")
+  transitionsFrom   WorkflowTransition[] @relation("TransitionFromUser")
+  transitionsTo     WorkflowTransition[] @relation("TransitionToUser")
+
+  // Notifications
+  notifications     Notification[]
+
+  // Audit
+  auditLogs         AuditLog[]
+
+  // Registers
+  createdRegisters  PhysicalRegister[]
+  registerEntries   RegisterEntry[]
+
+  // Signing
+  signingRequests   SigningRequest[]
+  signatures        Signature[]
+
+  // Role assignments made by this user
+  roleAssignments   UserRole[]         @relation("RoleAssignedBy")
+
+  // Department head
+  headOfDepartments Department[]       @relation("DepartmentHead")
+
+  // Refresh tokens
+  refreshTokens     RefreshToken[]
+
+  // Workflow definitions
+  workflowDefinitions WorkflowDefinition[]
+
+  @@index([email])
+  @@index([username])
+  @@index([isActive])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// RBAC - ROLES & PERMISSIONS
+// ============================================
+
+model Role {
+  id           String    @id @default(uuid())
+  name         String    @unique
+  displayName  String    @map("display_name")
+  description  String?
+  permissions  Json      @default("[]") // Array of permission strings
+  isSystemRole Boolean   @default(false) @map("is_system_role")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  userRoles    UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  roleId     String   @map("role_id")
+  assignedBy String?  @map("assigned_by")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assigner   User?    @relation("RoleAssignedBy", fields: [assignedBy], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model Permission {
+  id           String   @id @default(uuid())
+  code         String   @unique
+  name         String
+  description  String?
+  resourceType String   @map("resource_type")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("permissions")
+}
+
+// ============================================
+// DEPARTMENTS
+// ============================================
+
+model Department {
+  id          String    @id @default(uuid())
+  name        String
+  code        String    @unique
+  parentId    String?   @map("parent_id")
+  headUserId  String?   @map("head_user_id")
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Self-relation for hierarchy
+  parent      Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Department[] @relation("DepartmentHierarchy")
+
+  // Head user
+  headUser    User?        @relation("DepartmentHead", fields: [headUserId], references: [id], onDelete: SetNull)
+
+  // Users
+  userDepartments UserDepartment[]
+
+  // Dockets
+  dockets           Docket[]           @relation("DocketCurrentDepartment")
+
+  // Assignments
+  assignmentsTo     DocketAssignment[] @relation("AssignmentToDepartment")
+  transitionsFrom   WorkflowTransition[] @relation("TransitionFromDepartment")
+  transitionsTo     WorkflowTransition[] @relation("TransitionToDepartment")
+
+  // Registers
+  registers         PhysicalRegister[]
+
+  @@index([code])
+  @@index([parentId])
+  @@map("departments")
+}
+
+model UserDepartment {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  departmentId String   @map("department_id")
+  isPrimary    Boolean  @default(false) @map("is_primary")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, departmentId])
+  @@index([userId])
+  @@index([departmentId])
+  @@map("user_departments")
+}
+
+// ============================================
+// PHYSICAL REGISTERS
+// ============================================
+
+model PhysicalRegister {
+  id           String    @id @default(uuid())
+  name         String
+  registerCode String    @unique @map("register_code")
+  description  String?
+  departmentId String?   @map("department_id")
+  registerType String    @map("register_type") // inward, outward, contract, general
+  yearStart    DateTime? @map("year_start")
+  yearEnd      DateTime? @map("year_end")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  createdBy    String?   @map("created_by")
+
+  department   Department?     @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  creator      User?           @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  entries      RegisterEntry[]
+
+  @@index([registerCode])
+  @@index([departmentId])
+  @@map("physical_registers")
+}
+
+model RegisterEntry {
+  id          String   @id @default(uuid())
+  registerId  String   @map("register_id")
+  entryNumber String   @map("entry_number")
+  entryDate   DateTime @map("entry_date")
+  subject     String
+  fromParty   String?  @map("from_party")
+  toParty     String?  @map("to_party")
+  remarks     String?
+  docketId    String?  @map("docket_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String?  @map("created_by")
+
+  register    PhysicalRegister @relation(fields: [registerId], references: [id], onDelete: Cascade)
+  docket      Docket?          @relation(fields: [docketId], references: [id], onDelete: SetNull)
+  creator     User?            @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@unique([registerId, entryNumber])
+  @@index([registerId])
+  @@index([docketId])
+  @@map("register_entries")
+}
+
+// ============================================
+// DOCKET TYPES
+// ============================================
+
+model DocketType {
+  id               String   @id @default(uuid())
+  name             String
+  code             String   @unique
+  description      String?
+  defaultWorkflowId String? @map("default_workflow_id")
+  slaDays          Int?     @map("sla_days")
+  requiresApproval Boolean  @default(false) @map("requires_approval")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  dockets          Docket[]
+  defaultWorkflow  WorkflowDefinition? @relation(fields: [defaultWorkflowId], references: [id], onDelete: SetNull)
+
+  @@index([code])
+  @@map("docket_types")
+}
+
+// ============================================
+// DOCKETS (PRIMARY ENTITY)
+// ============================================
+
+model Docket {
+  id                  String    @id @default(uuid())
+
+  // Identification
+  docketNumber        String    @unique @map("docket_number")
+  qrToken             String    @unique @map("qr_token")
+  qrCodePath          String?   @map("qr_code_path")
+
+  // Classification
+  docketTypeId        String?   @map("docket_type_id")
+  subject             String
+  description         String?
+  priority            String    @default("normal") // low, normal, high, urgent
+  confidentiality     String    @default("internal") // public, internal, confidential, secret
+
+  // Workflow state
+  status              String    @default("open") // open, in_review, forwarded, pending_approval, approved, rejected, closed, archived
+  workflowInstanceId  String?   @map("workflow_instance_id")
+  currentAssigneeId   String?   @map("current_assignee_id")
+  currentDepartmentId String?   @map("current_department_id")
+
+  // Physical register link
+  registerEntryId     String?   @map("register_entry_id")
+
+  // SLA
+  dueDate             DateTime? @map("due_date")
+  slaStatus           String    @default("on_track") @map("sla_status") // on_track, at_risk, overdue
+
+  // Metadata
+  tags                Json      @default("[]")
+  customFields        Json      @default("{}") @map("custom_fields")
+
+  // Audit
+  createdAt           DateTime  @default(now()) @map("created_at")
+  createdBy           String?   @map("created_by")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  updatedBy           String?   @map("updated_by")
+  closedAt            DateTime? @map("closed_at")
+  closedBy            String?   @map("closed_by")
+  deletedAt           DateTime? @map("deleted_at")
+
+  // Relations
+  docketType          DocketType?        @relation(fields: [docketTypeId], references: [id], onDelete: SetNull)
+  currentAssignee     User?              @relation("DocketCurrentAssignee", fields: [currentAssigneeId], references: [id], onDelete: SetNull)
+  currentDepartment   Department?        @relation("DocketCurrentDepartment", fields: [currentDepartmentId], references: [id], onDelete: SetNull)
+  creator             User?              @relation("DocketCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  updater             User?              @relation("DocketUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+  closer              User?              @relation("DocketClosedBy", fields: [closedBy], references: [id], onDelete: SetNull)
+  workflowInstance    WorkflowInstance?  @relation(fields: [workflowInstanceId], references: [id], onDelete: SetNull)
+
+  // Child entities
+  attachments         DocketAttachment[]
+  comments            DocketComment[]
+  assignments         DocketAssignment[]
+  registerEntries     RegisterEntry[]
+
+  // Signing
+  signingRequests     SigningRequest[]
+
+  // Audit logs
+  auditLogs           AuditLog[]
+
+  @@index([docketNumber])
+  @@index([qrToken])
+  @@index([status])
+  @@index([currentAssigneeId])
+  @@index([currentDepartmentId])
+  @@index([docketTypeId])
+  @@index([createdAt(sort: Desc)])
+  @@index([dueDate])
+  @@index([slaStatus])
+  @@map("dockets")
+}
+
+// ============================================
+// DOCKET ATTACHMENTS
+// ============================================
+
+model DocketAttachment {
+  id              String    @id @default(uuid())
+  docketId        String    @map("docket_id")
+
+  // File info
+  fileName        String    @map("file_name")
+  originalFileName String   @map("original_file_name")
+  fileSize        BigInt    @map("file_size")
+  mimeType        String    @map("mime_type")
+  storageBucket   String    @map("storage_bucket")
+  storageKey      String    @map("storage_key")
+
+  // Metadata
+  attachmentType  String    @default("document") @map("attachment_type") // document, image, supporting, cover_letter, approval_note, other
+  description     String?
+  version         Int       @default(1)
+  isPrimary       Boolean   @default(false) @map("is_primary")
+
+  // OnlyOffice
+  onlyofficeKey   String?   @map("onlyoffice_key")
+  lastEditedAt    DateTime? @map("last_edited_at")
+  lastEditedBy    String?   @map("last_edited_by")
+
+  // Signing
+  isSigned        Boolean   @default(false) @map("is_signed")
+  signingStatus   String?   @map("signing_status")
+  signedAt        DateTime? @map("signed_at")
+  signedBy        String?   @map("signed_by")
+  signatureData   Json?     @map("signature_data")
+
+  // Audit
+  uploadedAt      DateTime  @default(now()) @map("uploaded_at")
+  uploadedBy      String?   @map("uploaded_by")
+  deletedAt       DateTime? @map("deleted_at")
+
+  // Relations
+  docket          Docket    @relation(fields: [docketId], references: [id], onDelete: Cascade)
+  uploader        User?     @relation("AttachmentUploadedBy", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  lastEditor      User?     @relation("AttachmentLastEditedBy", fields: [lastEditedBy], references: [id], onDelete: SetNull)
+  signer          User?     @relation("AttachmentSignedBy", fields: [signedBy], references: [id], onDelete: SetNull)
+
+  // Comments referencing this attachment
+  comments        DocketComment[]
+
+  // Signing requests
+  signingRequests SigningRequest[]
+
+  @@index([docketId])
+  @@index([isPrimary])
+  @@map("docket_attachments")
+}
+
+// ============================================
+// DOCKET COMMENTS (IMMUTABLE)
+// ============================================
+
+model DocketComment {
+  id           String   @id @default(uuid())
+  docketId     String   @map("docket_id")
+
+  commentType  String   @default("note") @map("comment_type") // note, observation, instruction, query, response, decision, system
+  content      String
+  attachmentId String?  @map("attachment_id")
+  isInternal   Boolean  @default(false) @map("is_internal")
+
+  // Immutable - only created_at, no updated_at
+  createdAt    DateTime @default(now()) @map("created_at")
+  createdBy    String   @map("created_by")
+
+  // Relations
+  docket       Docket           @relation(fields: [docketId], references: [id], onDelete: Cascade)
+  attachment   DocketAttachment? @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+  author       User             @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([docketId])
+  @@index([createdAt(sort: Desc)])
+  @@map("docket_comments")
+}
+
+// ============================================
+// DOCKET ASSIGNMENTS (FORWARDING CHAIN)
+// ============================================
+
+model DocketAssignment {
+  id                   String    @id @default(uuid())
+  docketId             String    @map("docket_id")
+
+  // Assignment targets
+  assignedToUserId     String?   @map("assigned_to_user_id")
+  assignedToDepartmentId String? @map("assigned_to_department_id")
+  assignedByUserId     String    @map("assigned_by_user_id")
+
+  // Chain position
+  sequenceNumber       Int       @map("sequence_number")
+
+  // Metadata
+  assignmentType       String    @default("forward") @map("assignment_type") // initial, forward, escalate, delegate, return
+  instructions         String?
+  expectedAction       String?   @map("expected_action") // review, approve, comment, sign
+  dueDate              DateTime? @map("due_date")
+
+  // Status
+  status               String    @default("pending") // pending, accepted, in_progress, completed, returned, escalated
+
+  // Timestamps
+  assignedAt           DateTime  @default(now()) @map("assigned_at")
+  acceptedAt           DateTime? @map("accepted_at")
+  completedAt          DateTime? @map("completed_at")
+
+  // Response
+  responseNotes        String?   @map("response_notes")
+  actionTaken          String?   @map("action_taken")
+
+  // Relations
+  docket               Docket      @relation(fields: [docketId], references: [id], onDelete: Cascade)
+  assignedToUser       User?       @relation("AssignedToUser", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  assignedToDepartment Department? @relation("AssignmentToDepartment", fields: [assignedToDepartmentId], references: [id], onDelete: SetNull)
+  assignedByUser       User        @relation("AssignedByUser", fields: [assignedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([docketId])
+  @@index([assignedToUserId])
+  @@index([assignedToDepartmentId])
+  @@index([docketId, sequenceNumber])
+  @@map("docket_assignments")
+}
+
+// ============================================
+// WORKFLOW ENGINE
+// ============================================
+
+model WorkflowDefinition {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  version     Int      @default(1)
+  isActive    Boolean  @default(true) @map("is_active")
+  states      Json     // Array of state definitions
+  transitions Json     // Array of transition rules
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String?  @map("created_by")
+
+  creator     User?              @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  instances   WorkflowInstance[]
+  docketTypes DocketType[]
+
+  @@map("workflow_definitions")
+}
+
+model WorkflowInstance {
+  id                   String    @id @default(uuid())
+  workflowDefinitionId String    @map("workflow_definition_id")
+
+  currentState         String    @map("current_state")
+  stateData            Json      @default("{}") @map("state_data")
+
+  startedAt            DateTime  @default(now()) @map("started_at")
+  completedAt          DateTime? @map("completed_at")
+
+  // Relations
+  workflowDefinition   WorkflowDefinition   @relation(fields: [workflowDefinitionId], references: [id])
+  dockets              Docket[]
+  transitions          WorkflowTransition[]
+  auditLogs            AuditLog[]
+
+  @@map("workflow_instances")
+}
+
+model WorkflowTransition {
+  id                 String    @id @default(uuid())
+  workflowInstanceId String    @map("workflow_instance_id")
+
+  fromState          String?   @map("from_state")
+  toState            String    @map("to_state")
+  action             String    // forward, approve, reject, close, reopen, etc.
+
+  performedBy        String    @map("performed_by")
+  performedAt        DateTime  @default(now()) @map("performed_at")
+
+  // Forward chain data
+  fromUserId         String?   @map("from_user_id")
+  toUserId           String?   @map("to_user_id")
+  fromDepartmentId   String?   @map("from_department_id")
+  toDepartmentId     String?   @map("to_department_id")
+
+  reason             String?
+  notes              String?
+  metadata           Json      @default("{}")
+
+  // Relations
+  workflowInstance   WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  performer          User             @relation("TransitionPerformedBy", fields: [performedBy], references: [id], onDelete: Cascade)
+  fromUser           User?            @relation("TransitionFromUser", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUser             User?            @relation("TransitionToUser", fields: [toUserId], references: [id], onDelete: SetNull)
+  fromDepartment     Department?      @relation("TransitionFromDepartment", fields: [fromDepartmentId], references: [id], onDelete: SetNull)
+  toDepartment       Department?      @relation("TransitionToDepartment", fields: [toDepartmentId], references: [id], onDelete: SetNull)
+
+  @@index([workflowInstanceId])
+  @@index([performedAt(sort: Desc)])
+  @@map("workflow_transitions")
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model NotificationTemplate {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  name            String
+  subjectTemplate String   @map("subject_template")
+  bodyTemplate    String   @map("body_template")
+  smsTemplate     String?  @map("sms_template")
+  channels        Json     @default("[\"email\"]")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  notifications   Notification[]
+
+  @@map("notification_templates")
+}
+
+model Notification {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  templateId   String?   @map("template_id")
+
+  title        String
+  message      String
+
+  resourceType String?   @map("resource_type") // docket, document, comment
+  resourceId   String?   @map("resource_id")
+  actionUrl    String?   @map("action_url")
+
+  channels     Json      @default("[\"email\"]")
+
+  // Status per channel
+  emailStatus  String    @default("pending") @map("email_status")
+  emailSentAt  DateTime? @map("email_sent_at")
+  smsStatus    String    @default("pending") @map("sms_status")
+  smsSentAt    DateTime? @map("sms_sent_at")
+  pushStatus   String    @default("pending") @map("push_status")
+  pushSentAt   DateTime? @map("push_sent_at")
+
+  // Read status
+  isRead       Boolean   @default(false) @map("is_read")
+  readAt       DateTime? @map("read_at")
+
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template     NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  outbox       NotificationOutbox[]
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model NotificationOutbox {
+  id             String    @id @default(uuid())
+  notificationId String    @map("notification_id")
+  channel        String    // email, sms, push
+  payload        Json
+  status         String    @default("pending")
+  attempts       Int       @default(0)
+  lastAttemptAt  DateTime? @map("last_attempt_at")
+  errorMessage   String?   @map("error_message")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  processedAt    DateTime? @map("processed_at")
+
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("notification_outbox")
+}
+
+// ============================================
+// SIGNING (PHASE 2)
+// ============================================
+
+model SigningRequest {
+  id                String    @id @default(uuid())
+  docketId          String    @map("docket_id")
+  attachmentId      String    @map("attachment_id")
+
+  signingProvider   String    @map("signing_provider") // signex, stellasign, internal
+  externalRequestId String?   @map("external_request_id")
+
+  signers           Json      // Array of {user_id, order, role, status}
+
+  status            String    @default("pending") // pending, in_progress, partially_signed, completed, rejected, expired, cancelled
+
+  expiresAt         DateTime? @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  createdBy         String?   @map("created_by")
+  completedAt       DateTime? @map("completed_at")
+
+  // Relations
+  docket            Docket           @relation(fields: [docketId], references: [id], onDelete: Cascade)
+  attachment        DocketAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  creator           User?            @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  signatures        Signature[]
+
+  @@index([docketId])
+  @@index([attachmentId])
+  @@index([status])
+  @@map("signing_requests")
+}
+
+model Signature {
+  id               String    @id @default(uuid())
+  signingRequestId String    @map("signing_request_id")
+
+  userId           String    @map("user_id")
+  signerOrder      Int       @map("signer_order")
+
+  signatureType    String?   @map("signature_type") // electronic, digital, qualified
+  signatureData    Json?     @map("signature_data")
+  certificateInfo  Json?     @map("certificate_info")
+
+  status           String    @default("pending") // pending, signed, rejected, skipped
+  signedAt         DateTime? @map("signed_at")
+  rejectedAt       DateTime? @map("rejected_at")
+  rejectionReason  String?   @map("rejection_reason")
+
+  ipAddress        String?   @map("ip_address")
+  userAgent        String?   @map("user_agent")
+  geolocation      Json?
+
+  // Relations
+  signingRequest   SigningRequest @relation(fields: [signingRequestId], references: [id], onDelete: Cascade)
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([signingRequestId])
+  @@index([userId])
+  @@map("signatures")
+}
+
+// ============================================
+// AUDIT LOGS
+// ============================================
+
+model AuditLog {
+  id                 String    @id @default(uuid())
+  userId             String?   @map("user_id")
+
+  action             String    // CREATE, UPDATE, DELETE, FORWARD, APPROVE, etc.
+  resourceType       String    @map("resource_type") // docket, attachment, user, etc.
+  resourceId         String?   @map("resource_id")
+
+  // Context
+  docketId           String?   @map("docket_id")
+  attachmentId       String?   @map("attachment_id")
+  workflowInstanceId String?   @map("workflow_instance_id")
+
+  // Details
+  details            Json      @default("{}")
+  oldValues          Json?     @map("old_values")
+  newValues          Json?     @map("new_values")
+
+  // Request info
+  ipAddress          String?   @map("ip_address")
+  userAgent          String?   @map("user_agent")
+  requestPath        String?   @map("request_path")
+  requestMethod      String?   @map("request_method")
+
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user               User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  docket             Docket?           @relation(fields: [docketId], references: [id], onDelete: SetNull)
+  workflowInstance   WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([resourceType, resourceId])
+  @@index([docketId])
+  @@index([createdAt(sort: Desc)])
+  @@map("audit_logs")
+}

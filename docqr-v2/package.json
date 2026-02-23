@@ -1,0 +1,39 @@
+{
+  "name": "docqr-v2",
+  "version": "1.0.0",
+  "description": "Hybrid Physical-to-Digital Document Workflow System",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/core & npm run dev --workspace=apps/web",
+    "dev:core": "npm run dev --workspace=apps/core",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspaces",
+    "build:core": "npm run build --workspace=apps/core",
+    "build:web": "npm run build --workspace=apps/web",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "db:generate": "npm run generate --workspace=packages/database",
+    "db:migrate": "npm run migrate --workspace=packages/database",
+    "db:push": "npm run push --workspace=packages/database",
+    "db:studio": "npm run studio --workspace=packages/database",
+    "docker:up": "docker-compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker-compose -f docker/docker-compose.yml down",
+    "docker:dev": "docker-compose -f docker/docker-compose.dev.yml up -d"
+  },
+  "keywords": [
+    "document-management",
+    "workflow",
+    "qr-code",
+    "docket",
+    "nestjs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

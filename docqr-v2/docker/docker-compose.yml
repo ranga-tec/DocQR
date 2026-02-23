@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: docqr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-docqr}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-docqr_secret}
+      POSTGRES_DB: ${DB_NAME:-docqr}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-docqr}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - docqr-network
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: docqr-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secret}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - docqr-network
+
+  # MinIO Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: docqr-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - docqr-network
+
+  # pgAdmin (Database Management - Dev only)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: docqr-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@docqr.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    depends_on:
+      - postgres
+    networks:
+      - docqr-network
+    profiles:
+      - dev
+
+  # OnlyOffice Document Server (Collaborative Editing)
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: docqr-onlyoffice
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-onlyoffice_jwt_secret}
+    volumes:
+      - onlyoffice_data:/var/lib/onlyoffice
+      - onlyoffice_logs:/var/log/onlyoffice
+    ports:
+      - "${ONLYOFFICE_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - docqr-network
+    profiles:
+      - full
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  pgadmin_data:
+  onlyoffice_data:
+  onlyoffice_logs:
+
+networks:
+  docqr-network:
+    driver: bridge
