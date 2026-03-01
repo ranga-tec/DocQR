@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './providers/email.service';
 import { SmsService } from './providers/sms.service';
-import { ConfigService } from '@nestjs/config';
 
 export enum NotificationType {
   DOCKET_CREATED = 'DOCKET_CREATED',
@@ -32,6 +33,18 @@ export interface NotificationPayload {
   data: Record<string, unknown>;
 }
 
+export interface NotificationPreferenceDto {
+  emailEnabled?: boolean;
+  smsEnabled?: boolean;
+  inAppEnabled?: boolean;
+  quietHoursEnabled?: boolean;
+  quietHoursStart?: string | null;
+  quietHoursEnd?: string | null;
+  timeZone?: string;
+  deliveryMode?: 'immediate' | 'digest';
+  digestFrequency?: 'daily' | 'weekly';
+}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -47,9 +60,6 @@ export class NotificationsService {
     this.baseUrl = this.configService.get<string>('APP_URL') || 'http://localhost:5173';
   }
 
-  /**
-   * Queue a notification for async processing
-   */
   async queueNotification(payload: NotificationPayload): Promise<void> {
     await this.notificationQueue.add('send', payload, {
       attempts: 3,
@@ -63,9 +73,6 @@ export class NotificationsService {
     this.logger.log(`Notification queued: ${payload.type} for user ${payload.userId}`);
   }
 
-  /**
-   * Process and send notification immediately
-   */
   async sendNotification(payload: NotificationPayload): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.userId },
@@ -84,30 +91,275 @@ export class NotificationsService {
       return;
     }
 
+    const preferences = await this.getOrCreatePreferences(user.id);
     const recipientName = user.firstName || user.username;
+    const adjustedChannels = this.applyPreferencesToChannels(
+      payload.channels,
+      preferences,
+    );
 
-    // Create in-app notification record
-    if (payload.channels.includes(NotificationChannel.IN_APP)) {
-      await this.createInAppNotification(user.id, payload);
+    // In-app is never blocked by quiet-hours; channel can still be disabled by preference.
+    if (adjustedChannels.includes(NotificationChannel.IN_APP)) {
+      await this.createInAppNotification(user.id, payload, adjustedChannels);
     }
 
-    // Send email notification
-    if (payload.channels.includes(NotificationChannel.EMAIL)) {
+    const externalChannels = adjustedChannels.filter((channel) => channel !== NotificationChannel.IN_APP);
+    if (externalChannels.length === 0) {
+      return;
+    }
+
+    if (preferences.deliveryMode === 'digest') {
+      this.logger.log(`Digest mode active for user ${user.id}. External channels deferred.`);
+      return;
+    }
+
+    if (externalChannels.includes(NotificationChannel.EMAIL)) {
       await this.sendEmailNotification(user.email, recipientName, payload);
     }
 
-    // Send SMS notification
-    if (payload.channels.includes(NotificationChannel.SMS) && user.phone) {
+    if (externalChannels.includes(NotificationChannel.SMS) && user.phone) {
       await this.sendSmsNotification(user.phone, payload);
     }
   }
 
-  /**
-   * Create in-app notification
-   */
+  async getUserNotifications(
+    userId: string,
+    options: { limit?: number; offset?: number; unreadOnly?: boolean } = {},
+  ) {
+    const { limit = 20, offset = 0, unreadOnly = false } = options;
+
+    const where = {
+      userId,
+      ...(unreadOnly && { isRead: false }),
+    };
+
+    const [notifications, total] = await Promise.all([
+      this.prisma.notification.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.notification.count({ where }),
+    ]);
+
+    return {
+      data: notifications,
+      total,
+      unreadCount: await this.getUnreadCount(userId),
+    };
+  }
+
+  async markAsRead(notificationId: string, userId: string): Promise<void> {
+    await this.prisma.notification.updateMany({
+      where: { id: notificationId, userId },
+      data: { isRead: true, readAt: new Date() },
+    });
+  }
+
+  async markAllAsRead(userId: string): Promise<void> {
+    await this.prisma.notification.updateMany({
+      where: { userId, isRead: false },
+      data: { isRead: true, readAt: new Date() },
+    });
+  }
+
+  async getUnreadCount(userId: string): Promise<number> {
+    return this.prisma.notification.count({
+      where: { userId, isRead: false },
+    });
+  }
+
+  async getPreferences(userId: string) {
+    return this.getOrCreatePreferences(userId);
+  }
+
+  async updatePreferences(userId: string, dto: NotificationPreferenceDto) {
+    await this.getOrCreatePreferences(userId);
+
+    return this.prisma.userNotificationPreference.update({
+      where: { userId },
+      data: {
+        emailEnabled: dto.emailEnabled,
+        smsEnabled: dto.smsEnabled,
+        inAppEnabled: dto.inAppEnabled,
+        quietHoursEnabled: dto.quietHoursEnabled,
+        quietHoursStart: dto.quietHoursStart,
+        quietHoursEnd: dto.quietHoursEnd,
+        timeZone: dto.timeZone,
+        deliveryMode: dto.deliveryMode,
+        digestFrequency: dto.digestFrequency,
+      },
+    });
+  }
+
+  async sendDigestForUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        firstName: true,
+      },
+    });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    const preferences = await this.getOrCreatePreferences(userId);
+    if (!preferences.emailEnabled) {
+      return { sent: false, reason: 'Email channel disabled in preferences' };
+    }
+
+    const recentNotifications = await this.prisma.notification.findMany({
+      where: {
+        userId,
+        createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    if (recentNotifications.length === 0) {
+      return { sent: false, reason: 'No notifications to include in digest' };
+    }
+
+    const recipientName = user.firstName || user.username;
+    const listHtml = recentNotifications
+      .map(
+        (item) =>
+          `<li><strong>${item.title}</strong><br /><span>${item.message}</span><br /><small>${item.createdAt.toISOString()}</small></li>`,
+      )
+      .join('');
+
+    await this.emailService.send({
+      to: user.email,
+      subject: `DOCQR Notification Digest (${recentNotifications.length} updates)`,
+      html: `
+        <h2>Notification Digest</h2>
+        <p>Hello ${recipientName},</p>
+        <p>Here is your latest digest from DOCQR.</p>
+        <ul>${listHtml}</ul>
+        <p><a href="${this.baseUrl}/settings">Manage your notification preferences</a></p>
+      `,
+      text: `Notification digest with ${recentNotifications.length} updates. Please log in to DOCQR to review details.`,
+    });
+
+    return {
+      sent: true,
+      count: recentNotifications.length,
+    };
+  }
+
+  private async getOrCreatePreferences(userId: string) {
+    let preference = await this.prisma.userNotificationPreference.findUnique({
+      where: { userId },
+    });
+
+    if (!preference) {
+      preference = await this.prisma.userNotificationPreference.create({
+        data: {
+          userId,
+          emailEnabled: true,
+          smsEnabled: false,
+          inAppEnabled: true,
+          quietHoursEnabled: false,
+          quietHoursStart: '22:00',
+          quietHoursEnd: '07:00',
+          timeZone: 'UTC',
+          deliveryMode: 'immediate',
+          digestFrequency: 'daily',
+        },
+      });
+    }
+
+    return preference;
+  }
+
+  private applyPreferencesToChannels(
+    channels: NotificationChannel[],
+    preferences: {
+      emailEnabled: boolean;
+      smsEnabled: boolean;
+      inAppEnabled: boolean;
+      quietHoursEnabled: boolean;
+      quietHoursStart: string | null;
+      quietHoursEnd: string | null;
+      timeZone: string;
+    },
+  ): NotificationChannel[] {
+    const allowed = channels.filter((channel) => {
+      if (channel === NotificationChannel.EMAIL && !preferences.emailEnabled) return false;
+      if (channel === NotificationChannel.SMS && !preferences.smsEnabled) return false;
+      if (channel === NotificationChannel.IN_APP && !preferences.inAppEnabled) return false;
+      return true;
+    });
+
+    if (!preferences.quietHoursEnabled) {
+      return allowed;
+    }
+
+    if (!preferences.quietHoursStart || !preferences.quietHoursEnd) {
+      return allowed;
+    }
+
+    const inQuietHours = this.isWithinQuietHours(
+      preferences.quietHoursStart,
+      preferences.quietHoursEnd,
+      preferences.timeZone || 'UTC',
+    );
+
+    if (!inQuietHours) {
+      return allowed;
+    }
+
+    return allowed.filter((channel) => channel === NotificationChannel.IN_APP);
+  }
+
+  private isWithinQuietHours(start: string, end: string, timeZone: string): boolean {
+    const currentMinutes = this.getCurrentMinutesInTimeZone(timeZone);
+    const startMinutes = this.parseTimeToMinutes(start);
+    const endMinutes = this.parseTimeToMinutes(end);
+
+    if (startMinutes === null || endMinutes === null) {
+      return false;
+    }
+
+    if (startMinutes < endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    }
+
+    // Quiet-hours window wraps midnight.
+    return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+  }
+
+  private getCurrentMinutesInTimeZone(timeZone: string): number {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+      timeZone,
+    });
+    const parts = formatter.formatToParts(new Date());
+    const hour = Number(parts.find((part) => part.type === 'hour')?.value || '0');
+    const minute = Number(parts.find((part) => part.type === 'minute')?.value || '0');
+    return (hour * 60) + minute;
+  }
+
+  private parseTimeToMinutes(value: string): number | null {
+    const match = value.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+    if (!match) {
+      return null;
+    }
+    return (Number(match[1]) * 60) + Number(match[2]);
+  }
+
   private async createInAppNotification(
     userId: string,
     payload: NotificationPayload,
+    channels: NotificationChannel[],
   ): Promise<void> {
     const title = this.getNotificationTitle(payload.type);
     const message = this.getNotificationMessage(payload);
@@ -123,17 +375,12 @@ export class NotificationsService {
         resourceType: payload.docketId ? 'docket' : undefined,
         resourceId: payload.docketId,
         actionUrl,
-        channels: JSON.stringify(payload.channels),
+        channels: channels as unknown as Prisma.InputJsonValue,
         isRead: false,
       },
     });
-
-    this.logger.log(`In-app notification created for user ${userId}`);
   }
 
-  /**
-   * Send email notification based on type
-   */
   private async sendEmailNotification(
     email: string,
     recipientName: string,
@@ -190,16 +437,17 @@ export class NotificationsService {
           break;
 
         default:
-          this.logger.debug(`No email template for type: ${payload.type}`);
+          await this.emailService.send({
+            to: email,
+            subject: this.getNotificationTitle(payload.type),
+            text: this.getNotificationMessage(payload),
+          });
       }
     } catch (error) {
       this.logger.error(`Failed to send email notification:`, error);
     }
   }
 
-  /**
-   * Send SMS notification based on type
-   */
   private async sendSmsNotification(
     phone: string,
     payload: NotificationPayload,
@@ -233,69 +481,6 @@ export class NotificationsService {
     }
   }
 
-  /**
-   * Get user notifications
-   */
-  async getUserNotifications(
-    userId: string,
-    options: { limit?: number; offset?: number; unreadOnly?: boolean } = {},
-  ) {
-    const { limit = 20, offset = 0, unreadOnly = false } = options;
-
-    const where = {
-      userId,
-      ...(unreadOnly && { isRead: false }),
-    };
-
-    const [notifications, total] = await Promise.all([
-      this.prisma.notification.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset,
-      }),
-      this.prisma.notification.count({ where }),
-    ]);
-
-    return {
-      data: notifications,
-      total,
-      unreadCount: await this.getUnreadCount(userId),
-    };
-  }
-
-  /**
-   * Mark notification as read
-   */
-  async markAsRead(notificationId: string, userId: string): Promise<void> {
-    await this.prisma.notification.updateMany({
-      where: { id: notificationId, userId },
-      data: { isRead: true, readAt: new Date() },
-    });
-  }
-
-  /**
-   * Mark all notifications as read
-   */
-  async markAllAsRead(userId: string): Promise<void> {
-    await this.prisma.notification.updateMany({
-      where: { userId, isRead: false },
-      data: { isRead: true, readAt: new Date() },
-    });
-  }
-
-  /**
-   * Get unread notification count
-   */
-  async getUnreadCount(userId: string): Promise<number> {
-    return this.prisma.notification.count({
-      where: { userId, isRead: false },
-    });
-  }
-
-  /**
-   * Helper: Get notification title based on type
-   */
   private getNotificationTitle(type: NotificationType): string {
     const titles: Record<NotificationType, string> = {
       [NotificationType.DOCKET_CREATED]: 'New Docket Created',
@@ -311,9 +496,6 @@ export class NotificationsService {
     return titles[type] || 'Notification';
   }
 
-  /**
-   * Helper: Get notification message
-   */
   private getNotificationMessage(payload: NotificationPayload): string {
     const data = payload.data as Record<string, string>;
     const docketRef = data.docketNumber ? `Docket ${data.docketNumber}` : 'A docket';
@@ -333,9 +515,6 @@ export class NotificationsService {
     return messages[payload.type] || 'You have a new notification.';
   }
 
-  /**
-   * Helper: Get action text for SMS
-   */
   private getActionText(type: NotificationType): string {
     const actions: Record<NotificationType, string> = {
       [NotificationType.DOCKET_CREATED]: 'was created',

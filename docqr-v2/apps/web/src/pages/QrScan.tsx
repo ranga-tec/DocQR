@@ -13,7 +13,7 @@ interface Docket {
   status: string;
   priority: string;
   createdAt: string;
-  createdBy: {
+  createdBy?: {
     firstName?: string;
     lastName?: string;
     username: string;
@@ -132,7 +132,7 @@ export default function QrScan() {
                 <p className="font-medium">
                   {docket.createdBy?.firstName
                     ? `${docket.createdBy.firstName} ${docket.createdBy.lastName || ''}`
-                    : docket.createdBy?.username}
+                    : docket.createdBy?.username || 'Restricted'}
                 </p>
               </div>
               <div>

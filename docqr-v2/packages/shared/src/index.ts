@@ -230,6 +230,7 @@ export interface DocketFilterParams extends PaginationParams {
   dateFrom?: string;
   dateTo?: string;
   slaStatus?: SlaStatus;
+  assignedToMe?: boolean | string; // Filter dockets assigned to current user
 }
 
 // ============================================

@@ -29,17 +29,29 @@ export class RolesService {
     return this.prisma.role.create({
       data: {
         name: dto.name,
-        displayName: dto.displayName,
+        displayName: dto.displayName || dto.name,
         description: dto.description,
-        permissions: dto.permissions,
+        permissions: dto.permissions || [],
       },
     });
   }
 
   async findAll() {
-    return this.prisma.role.findMany({
+    const roles = await this.prisma.role.findMany({
+      include: {
+        _count: {
+          select: {
+            userRoles: true,
+          },
+        },
+      },
       orderBy: { name: 'asc' },
     });
+
+    return roles.map((role) => ({
+      ...role,
+      userCount: role._count.userRoles,
+    }));
   }
 
   async findOne(id: string) {
@@ -68,7 +80,11 @@ export class RolesService {
 
     return this.prisma.role.update({
       where: { id },
-      data: dto,
+      data: {
+        displayName: dto.displayName,
+        description: dto.description,
+        permissions: dto.permissions,
+      },
     });
   }
 

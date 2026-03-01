@@ -7,8 +7,10 @@ interface User {
   username: string;
   firstName?: string;
   lastName?: string;
-  roles: { role: { name: string; permissions: { permission: { name: string } }[] } }[];
-  departments: { department: { id: string; name: string; code: string } }[];
+  phone?: string;
+  roles?: string[];
+  permissions?: string[];
+  departments?: { department?: { id: string; name: string; code: string } }[];
 }
 
 interface AuthContextType {
@@ -17,6 +19,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   hasPermission: (permission: string) => boolean;
   hasRole: (role: string) => boolean;
 }
@@ -36,7 +39,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const response = await authApi.getProfile();
-      setUser(response.data);
+      // Ensure we have the user data with proper structure
+      const userData = response.data;
+      // Normalize permissions and roles to always be arrays
+      setUser({
+        ...userData,
+        roles: userData.roles || [],
+        permissions: userData.permissions || [],
+      });
     } catch {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
@@ -58,7 +68,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('refreshToken', refreshToken);
     localStorage.setItem('user', JSON.stringify(userData));
 
-    setUser(userData);
+    // Normalize permissions and roles to always be arrays
+    setUser({
+      ...userData,
+      roles: userData.roles || [],
+      permissions: userData.permissions || [],
+    });
   };
 
   const logout = async () => {
@@ -78,15 +93,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const hasPermission = (permission: string): boolean => {
-    if (!user) return false;
-    return user.roles.some(ur =>
-      ur.role.permissions.some(p => p.permission.name === permission)
-    );
+    if (!user || !user.permissions) return false;
+    // Check for wildcard permission or exact match
+    return user.permissions.includes('*') || user.permissions.includes(permission);
   };
 
   const hasRole = (role: string): boolean => {
-    if (!user) return false;
-    return user.roles.some(ur => ur.role.name === role);
+    if (!user || !user.roles) return false;
+    return user.roles.includes(role);
   };
 
   return (
@@ -97,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user,
         login,
         logout,
+        refreshUser: loadUser,
         hasPermission,
         hasRole,
       }}

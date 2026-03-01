@@ -1,10 +1,39 @@
-import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useRef } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { docketsApi } from '../../lib/api';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { getStatusColor, getPriorityColor, formatDate } from '../../lib/utils';
+import { isDirectScannerAvailable, pickScannedFile, scanDocumentFromProvider } from '../../lib/scanner';
+import ForwardModal from '../../components/ForwardModal';
+import ReturnModal from '../../components/ReturnModal';
+import RejectModal from '../../components/RejectModal';
+
+// File extensions supported by OnlyOffice for editing
+const EDITABLE_EXTENSIONS = ['doc', 'docx', 'odt', 'rtf', 'txt', 'xls', 'xlsx', 'ods', 'csv', 'ppt', 'pptx', 'odp'];
+const VIEWABLE_EXTENSIONS = [...EDITABLE_EXTENSIONS, 'pdf', 'djvu', 'xps', 'epub'];
+
+function isFileEditable(fileName: string): boolean {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  return EDITABLE_EXTENSIONS.includes(ext);
+}
+
+function isFileViewable(fileName: string): boolean {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  return VIEWABLE_EXTENSIONS.includes(ext);
+}
+
+interface CommentNode {
+  id: string;
+  content: string;
+  createdAt: string;
+  isInternal?: boolean;
+  parentCommentId?: string | null;
+  attachment?: { id: string; originalFileName: string } | null;
+  author?: { id: string; username: string; firstName?: string } | null;
+  replies?: CommentNode[];
+}
 
 export default function DocketDetail() {
   const { id } = useParams<{ id: string }>();
@@ -12,6 +41,16 @@ export default function DocketDetail() {
   const queryClient = useQueryClient();
   const [showQr, setShowQr] = useState(false);
   const [qrImage, setQrImage] = useState<string | null>(null);
+  const [newComment, setNewComment] = useState('');
+  const [showForwardModal, setShowForwardModal] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const [commentFile, setCommentFile] = useState<File | null>(null);
+  const [replyToCommentId, setReplyToCommentId] = useState<string | null>(null);
+  const [isInternalComment, setIsInternalComment] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const commentFileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: docket, isLoading } = useQuery({
     queryKey: ['docket', id],
@@ -48,10 +87,164 @@ export default function DocketDetail() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['docket', id] }),
   });
 
+  const acceptMutation = useMutation({
+    mutationFn: () => docketsApi.accept(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['docket', id] });
+      queryClient.invalidateQueries({ queryKey: ['docket', id, 'history'] });
+    },
+  });
+
   const closeMutation = useMutation({
     mutationFn: () => docketsApi.close(id!),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['docket', id] }),
   });
+
+  const submitForApprovalMutation = useMutation({
+    mutationFn: () => docketsApi.submitForApproval(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['docket', id] });
+      queryClient.invalidateQueries({ queryKey: ['docket', id, 'history'] });
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: () => docketsApi.archive(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['docket', id] });
+      queryClient.invalidateQueries({ queryKey: ['docket', id, 'history'] });
+    },
+  });
+
+  const forwardMutation = useMutation({
+    mutationFn: (data: { toUserId?: string; toDepartmentId?: string; instructions?: string }) =>
+      docketsApi.forward(id!, data),
+    onSuccess: () => {
+      setShowForwardModal(false);
+      queryClient.invalidateQueries({ queryKey: ['docket', id] });
+      queryClient.invalidateQueries({ queryKey: ['docket', id, 'history'] });
+    },
+  });
+
+  const returnMutation = useMutation({
+    mutationFn: (data?: { reason?: string; notes?: string }) =>
+      docketsApi.return(id!, data),
+    onSuccess: () => {
+      setShowReturnModal(false);
+      queryClient.invalidateQueries({ queryKey: ['docket', id] });
+      queryClient.invalidateQueries({ queryKey: ['docket', id, 'history'] });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (data: { reason: string; notes?: string }) =>
+      docketsApi.reject(id!, data),
+    onSuccess: () => {
+      setShowRejectModal(false);
+      queryClient.invalidateQueries({ queryKey: ['docket', id] });
+      queryClient.invalidateQueries({ queryKey: ['docket', id, 'history'] });
+    },
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => docketsApi.uploadAttachment(id!, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['docket', id, 'attachments'] });
+    },
+  });
+
+  const scanMutation = useMutation({
+    mutationFn: (payload: {
+      file: File;
+      metadata?: {
+        scannerProvider?: string;
+        scannerDevice?: string;
+        resolutionDpi?: number;
+        colorMode?: string;
+        pageCount?: number;
+      };
+    }) => docketsApi.scanAttachment(id!, payload.file, payload.metadata),
+    onSuccess: () => {
+      setScanError('');
+      queryClient.invalidateQueries({ queryKey: ['docket', id, 'attachments'] });
+    },
+    onError: () => {
+      setScanError('Scanner upload failed. Please try again.');
+    },
+  });
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: (attachmentId: string) => docketsApi.deleteAttachment(id!, attachmentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['docket', id, 'attachments'] });
+    },
+  });
+
+  const addCommentMutation = useMutation({
+    mutationFn: async (payload: {
+      content: string;
+      file?: File | null;
+      parentCommentId?: string | null;
+      isInternal?: boolean;
+    }) => {
+      if (payload.file) {
+        return docketsApi.addCommentWithAttachment(id!, {
+          file: payload.file,
+          content: payload.content,
+          parentCommentId: payload.parentCommentId || undefined,
+          isInternal: payload.isInternal,
+        });
+      }
+
+      return docketsApi.addComment(id!, {
+        content: payload.content,
+        parentCommentId: payload.parentCommentId || undefined,
+        isInternal: payload.isInternal,
+      });
+    },
+    onSuccess: () => {
+      setNewComment('');
+      setCommentFile(null);
+      setReplyToCommentId(null);
+      setIsInternalComment(false);
+      queryClient.invalidateQueries({ queryKey: ['docket', id, 'comments'] });
+    },
+  });
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      uploadMutation.mutate(file);
+    }
+    // Reset input so the same file can be selected again
+    event.target.value = '';
+  };
+
+  const handleScan = async () => {
+    setScanError('');
+
+    try {
+      let scanned: Awaited<ReturnType<typeof scanDocumentFromProvider>>;
+      if (isDirectScannerAvailable()) {
+        try {
+          scanned = await scanDocumentFromProvider();
+        } catch (providerError) {
+          const providerMessage = providerError instanceof Error ? providerError.message : 'unknown provider error';
+          scanned = await pickScannedFile();
+          setScanError(`Direct scanner unavailable (${providerMessage}). Please select a scanned file.`);
+        }
+      } else {
+        scanned = await pickScannedFile();
+      }
+
+      scanMutation.mutate({
+        file: scanned.file,
+        metadata: scanned.metadata,
+      });
+    } catch (error) {
+      setScanError(error instanceof Error ? error.message : 'Scanner action failed');
+    }
+  };
 
   const loadQrCode = async () => {
     if (!id) return;
@@ -84,6 +277,62 @@ export default function DocketDetail() {
 
   const d = docket.data;
   const actions = allowedActions?.data || [];
+  const commentTree: CommentNode[] = comments?.data || [];
+
+  const renderCommentNode = (comment: CommentNode, depth = 0): React.ReactNode => (
+    <li key={comment.id} className="border-b pb-4 last:border-0">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs">
+          {(comment.author?.firstName?.[0] || comment.author?.username?.[0] || '?').toUpperCase()}
+        </div>
+        <span className="font-medium text-sm">
+          {comment.author?.firstName || comment.author?.username || 'Unknown'}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {formatDate(comment.createdAt)}
+        </span>
+        {comment.isInternal ? (
+          <span className="text-[10px] px-2 py-0.5 rounded bg-amber-100 text-amber-800">Internal</span>
+        ) : null}
+      </div>
+      <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
+      {comment.attachment ? (
+        <div className="mt-2">
+          <button
+            type="button"
+            className="text-xs text-primary hover:underline"
+            onClick={() => {
+              docketsApi.downloadAttachment(id!, comment.attachment!.id).then((response) => {
+                const url = URL.createObjectURL(response.data);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = comment.attachment?.originalFileName || 'comment-attachment';
+                a.click();
+                URL.revokeObjectURL(url);
+              });
+            }}
+          >
+            Attachment: {comment.attachment.originalFileName}
+          </button>
+        </div>
+      ) : null}
+      <div className="mt-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setReplyToCommentId(comment.id)}
+        >
+          Reply
+        </Button>
+      </div>
+      {(comment.replies?.length ?? 0) > 0 ? (
+        <ul className={`space-y-3 mt-3 ${depth >= 0 ? 'pl-5 border-l' : ''}`}>
+          {comment.replies!.map((reply) => renderCommentNode(reply, depth + 1))}
+        </ul>
+      ) : null}
+    </li>
+  );
 
   return (
     <div className="space-y-6">
@@ -152,7 +401,7 @@ export default function DocketDetail() {
                 <div>
                   <span className="text-muted-foreground">Created by:</span>
                   <span className="ml-2 font-medium">
-                    {d.createdBy?.firstName || d.createdBy?.username}
+                    {d.creator?.firstName || d.creator?.username}
                   </span>
                 </div>
                 <div>
@@ -165,44 +414,225 @@ export default function DocketDetail() {
                     <span className="ml-2">{d.docketType.name}</span>
                   </div>
                 )}
-                {d.currentAssignment && (
+                {d.currentAssignee && (
                   <div>
                     <span className="text-muted-foreground">Assigned to:</span>
                     <span className="ml-2">
-                      {d.currentAssignment.assignedTo?.firstName ||
-                        d.currentAssignment.assignedTo?.username}
+                      {d.currentAssignee?.firstName || d.currentAssignee?.username}
                     </span>
+                  </div>
+                )}
+                {d.receivedDate && (
+                  <div>
+                    <span className="text-muted-foreground">Received:</span>
+                    <span className="ml-2">{formatDate(d.receivedDate)}</span>
                   </div>
                 )}
               </div>
             </CardContent>
           </Card>
 
+          {/* Sender Information */}
+          {(d.senderName || d.senderOrganization) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  Sender Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  {d.senderName && (
+                    <div>
+                      <span className="text-muted-foreground">Name:</span>
+                      <span className="ml-2 font-medium">{d.senderName}</span>
+                    </div>
+                  )}
+                  {d.senderOrganization && (
+                    <div>
+                      <span className="text-muted-foreground">Organization:</span>
+                      <span className="ml-2">{d.senderOrganization}</span>
+                    </div>
+                  )}
+                  {d.senderEmail && (
+                    <div>
+                      <span className="text-muted-foreground">Email:</span>
+                      <a href={`mailto:${d.senderEmail}`} className="ml-2 text-primary hover:underline">
+                        {d.senderEmail}
+                      </a>
+                    </div>
+                  )}
+                  {d.senderPhone && (
+                    <div>
+                      <span className="text-muted-foreground">Phone:</span>
+                      <a href={`tel:${d.senderPhone}`} className="ml-2 text-primary hover:underline">
+                        {d.senderPhone}
+                      </a>
+                    </div>
+                  )}
+                  {d.senderAddress && (
+                    <div className="col-span-2">
+                      <span className="text-muted-foreground">Address:</span>
+                      <span className="ml-2">{d.senderAddress}</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Attachments */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Attachments</CardTitle>
-              <Button variant="outline" size="sm">
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Upload
-              </Button>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleScan}
+                  disabled={scanMutation.isPending}
+                  title={isDirectScannerAvailable()
+                    ? 'Scan directly from configured scanner integration'
+                    : 'No direct scanner connector found, file picker will open'}
+                >
+                  {scanMutation.isPending ? (
+                    <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9V4h12v5M6 14h12M8 19h8" />
+                    </svg>
+                  )}
+                  {scanMutation.isPending ? 'Scanning...' : 'Scan'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadMutation.isPending}
+                >
+                  {uploadMutation.isPending ? (
+                    <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  ) : (
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  )}
+                  {uploadMutation.isPending ? 'Uploading...' : 'Upload'}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
+              {scanError && (
+                <div className="mb-3 rounded border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {scanError}
+                </div>
+              )}
               {(attachments?.data?.length ?? 0) > 0 ? (
                 <ul className="space-y-2">
-                  {attachments?.data?.map((att: { id: string; fileName: string; fileSize: number }) => (
+                  {attachments?.data?.map((att: {
+                    id: string;
+                    originalFileName: string;
+                    fileName: string;
+                    fileSize: string | number;
+                    ingestionSource?: string;
+                    extractedContent?: {
+                      status?: string;
+                      extractionMethod?: string;
+                      processedAt?: string;
+                    };
+                  }) => (
                     <li key={att.id} className="flex items-center justify-between p-2 rounded border">
                       <div className="flex items-center gap-2">
                         <svg className="w-5 h-5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                         </svg>
-                        <span>{att.fileName}</span>
+                        <div className="flex flex-col">
+                          <span>{att.originalFileName || att.fileName}</span>
+                          <span className="text-xs text-muted-foreground">
+                            Source: {att.ingestionSource || 'upload'}
+                            {att.extractedContent?.status && (
+                              <> | OCR: {att.extractedContent.status}</>
+                            )}
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-sm text-muted-foreground">
-                        {(att.fileSize / 1024).toFixed(1)} KB
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-muted-foreground mr-2">
+                          {(Number(att.fileSize) / 1024).toFixed(1)} KB
+                        </span>
+                        {/* View button - for viewable documents */}
+                        {isFileViewable(att.originalFileName || att.fileName) && (
+                          <Link
+                            to={`/document/${att.id}?mode=view&name=${encodeURIComponent(att.originalFileName || att.fileName)}`}
+                          >
+                            <Button variant="ghost" size="sm" title="View in Editor">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            </Button>
+                          </Link>
+                        )}
+                        {/* Edit button - for editable documents */}
+                        {isFileEditable(att.originalFileName || att.fileName) && (
+                          <Link
+                            to={`/document/${att.id}?mode=edit&name=${encodeURIComponent(att.originalFileName || att.fileName)}`}
+                          >
+                            <Button variant="ghost" size="sm" title="Edit Document">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </Button>
+                          </Link>
+                        )}
+                        {/* Download button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Download"
+                          onClick={() => {
+                            docketsApi.downloadAttachment(id!, att.id).then((response) => {
+                              const url = URL.createObjectURL(response.data);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = att.originalFileName || att.fileName;
+                              a.click();
+                              URL.revokeObjectURL(url);
+                            });
+                          }}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </Button>
+                        {/* Delete button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Delete"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => {
+                            if (confirm('Are you sure you want to delete this attachment?')) {
+                              deleteAttachmentMutation.mutate(att.id);
+                            }
+                          }}
+                          disabled={deleteAttachmentMutation.isPending}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </Button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -219,30 +649,96 @@ export default function DocketDetail() {
             <CardHeader>
               <CardTitle>Comments</CardTitle>
             </CardHeader>
-            <CardContent>
-              {(comments?.data?.length ?? 0) > 0 ? (
+            <CardContent className="space-y-4">
+              {/* Add Comment Form */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (newComment.trim() || commentFile) {
+                    addCommentMutation.mutate({
+                      content: newComment.trim(),
+                      file: commentFile,
+                      parentCommentId: replyToCommentId,
+                      isInternal: isInternalComment,
+                    });
+                  }
+                }}
+                className="space-y-2"
+              >
+                {replyToCommentId ? (
+                  <div className="text-xs text-muted-foreground">
+                    Replying to comment
+                    <button
+                      type="button"
+                      className="ml-2 text-primary hover:underline"
+                      onClick={() => setReplyToCommentId(null)}
+                    >
+                      Cancel reply
+                    </button>
+                  </div>
+                ) : null}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder="Add a comment... Use @username to mention"
+                    className="flex-1 px-3 py-2 border rounded-md bg-background text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => commentFileInputRef.current?.click()}
+                  >
+                    Attach
+                  </Button>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={(!newComment.trim() && !commentFile) || addCommentMutation.isPending}
+                  >
+                    {addCommentMutation.isPending ? 'Posting...' : 'Post'}
+                  </Button>
+                </div>
+                <input
+                  type="file"
+                  ref={commentFileInputRef}
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setCommentFile(file);
+                    e.target.value = '';
+                  }}
+                />
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-muted-foreground flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isInternalComment}
+                      onChange={(e) => setIsInternalComment(e.target.checked)}
+                    />
+                    Internal comment
+                  </label>
+                  {commentFile ? (
+                    <span className="text-xs text-muted-foreground">
+                      Attached: {commentFile.name}
+                      <button
+                        type="button"
+                        className="ml-2 text-primary hover:underline"
+                        onClick={() => setCommentFile(null)}
+                      >
+                        remove
+                      </button>
+                    </span>
+                  ) : null}
+                </div>
+              </form>
+
+              {/* Comments List */}
+              {(commentTree.length ?? 0) > 0 ? (
                 <ul className="space-y-4">
-                  {comments?.data?.map((comment: {
-                    id: string;
-                    content: string;
-                    createdAt: string;
-                    createdBy: { firstName?: string; username: string };
-                  }) => (
-                    <li key={comment.id} className="border-b pb-4 last:border-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs">
-                          {(comment.createdBy.firstName?.[0] || comment.createdBy.username[0]).toUpperCase()}
-                        </div>
-                        <span className="font-medium text-sm">
-                          {comment.createdBy.firstName || comment.createdBy.username}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDate(comment.createdAt)}
-                        </span>
-                      </div>
-                      <p className="text-sm">{comment.content}</p>
-                    </li>
-                  ))}
+                  {commentTree.map((comment) => renderCommentNode(comment))}
                 </ul>
               ) : (
                 <p className="text-muted-foreground text-center py-4">
@@ -262,11 +758,27 @@ export default function DocketDetail() {
             </CardHeader>
             <CardContent className="space-y-2">
               {actions.includes('forward') && (
-                <Button variant="outline" className="w-full justify-start">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => setShowForwardModal(true)}
+                >
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                   </svg>
                   Forward
+                </Button>
+              )}
+              {actions.includes('return') && (
+                <Button
+                  variant="secondary"
+                  className="w-full justify-start"
+                  onClick={() => setShowReturnModal(true)}
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+                  </svg>
+                  Return
                 </Button>
               )}
               {actions.includes('approve') && (
@@ -278,11 +790,40 @@ export default function DocketDetail() {
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  Approve
+                  {approveMutation.isPending ? 'Approving...' : 'Approve'}
+                </Button>
+              )}
+              {actions.includes('accept') && (
+                <Button
+                  className="w-full justify-start"
+                  onClick={() => acceptMutation.mutate()}
+                  disabled={acceptMutation.isPending}
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  {acceptMutation.isPending ? 'Accepting...' : 'Accept'}
+                </Button>
+              )}
+              {actions.includes('submit_for_approval') && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => submitForApprovalMutation.mutate()}
+                  disabled={submitForApprovalMutation.isPending}
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m-4-4h8" />
+                  </svg>
+                  {submitForApprovalMutation.isPending ? 'Submitting...' : 'Submit for Approval'}
                 </Button>
               )}
               {actions.includes('reject') && (
-                <Button variant="destructive" className="w-full justify-start">
+                <Button
+                  variant="destructive"
+                  className="w-full justify-start"
+                  onClick={() => setShowRejectModal(true)}
+                >
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
@@ -299,7 +840,35 @@ export default function DocketDetail() {
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                   </svg>
-                  Close
+                  {closeMutation.isPending ? 'Closing...' : 'Close'}
+                </Button>
+              )}
+              {actions.includes('reopen') && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => docketsApi.reopen(id!).then(() => {
+                    queryClient.invalidateQueries({ queryKey: ['docket', id] });
+                    queryClient.invalidateQueries({ queryKey: ['docket', id, 'history'] });
+                  })}
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Reopen
+                </Button>
+              )}
+              {actions.includes('archive') && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => archiveMutation.mutate()}
+                  disabled={archiveMutation.isPending}
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8l1 12h12l1-12M9 8V6h6v2" />
+                  </svg>
+                  {archiveMutation.isPending ? 'Archiving...' : 'Archive'}
                 </Button>
               )}
               {actions.length === 0 && (
@@ -348,6 +917,28 @@ export default function DocketDetail() {
           </Card>
         </div>
       </div>
+
+      {/* Modals */}
+      <ForwardModal
+        isOpen={showForwardModal}
+        onClose={() => setShowForwardModal(false)}
+        onSubmit={(data) => forwardMutation.mutate(data)}
+        isLoading={forwardMutation.isPending}
+      />
+
+      <ReturnModal
+        isOpen={showReturnModal}
+        onClose={() => setShowReturnModal(false)}
+        onSubmit={(data) => returnMutation.mutate(data)}
+        isLoading={returnMutation.isPending}
+      />
+
+      <RejectModal
+        isOpen={showRejectModal}
+        onClose={() => setShowRejectModal(false)}
+        onSubmit={(data) => rejectMutation.mutate(data)}
+        isLoading={rejectMutation.isPending}
+      />
     </div>
   );
 }

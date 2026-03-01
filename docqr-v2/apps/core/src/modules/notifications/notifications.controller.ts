@@ -2,14 +2,17 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Param,
   Query,
   UseGuards,
   Request,
+  Body,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { NotificationsService } from './notifications.service';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { NotificationPreferenceDto, NotificationsService } from './notifications.service';
 
 @ApiTags('notifications')
 @ApiBearerAuth('JWT-auth')
@@ -27,12 +30,15 @@ export class NotificationsController {
     @Request() req: { user: { id: string } },
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
-    @Query('unreadOnly') unreadOnly?: boolean,
+    @Query('unreadOnly') unreadOnly?: string | boolean,
   ) {
+    const unreadOnlyBool =
+      unreadOnly === true || unreadOnly === 'true' || unreadOnly === '1';
+
     return this.notificationsService.getUserNotifications(req.user.id, {
       limit: limit ? parseInt(String(limit)) : 20,
       offset: offset ? parseInt(String(offset)) : 0,
-      unreadOnly: unreadOnly === true || unreadOnly === 'true' as unknown as boolean,
+      unreadOnly: unreadOnlyBool,
     });
   }
 
@@ -58,5 +64,26 @@ export class NotificationsController {
   async markAllAsRead(@Request() req: { user: { id: string } }) {
     await this.notificationsService.markAllAsRead(req.user.id);
     return { success: true };
+  }
+
+  @Get('preferences')
+  @ApiOperation({ summary: 'Get current user notification preferences' })
+  getPreferences(@CurrentUser('id') userId: string) {
+    return this.notificationsService.getPreferences(userId);
+  }
+
+  @Put('preferences')
+  @ApiOperation({ summary: 'Update current user notification preferences' })
+  updatePreferences(
+    @CurrentUser('id') userId: string,
+    @Body() dto: NotificationPreferenceDto,
+  ) {
+    return this.notificationsService.updatePreferences(userId, dto);
+  }
+
+  @Post('digest/send')
+  @ApiOperation({ summary: 'Send a digest email for current user notifications' })
+  sendDigest(@CurrentUser('id') userId: string) {
+    return this.notificationsService.sendDigestForUser(userId);
   }
 }

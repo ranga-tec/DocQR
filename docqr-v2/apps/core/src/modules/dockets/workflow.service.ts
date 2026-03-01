@@ -1,10 +1,11 @@
-import { Injectable, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DocketStatus,
   WorkflowAction,
   WORKFLOW_TRANSITIONS,
 } from '@docqr/shared';
+import { NotificationsService, NotificationType, NotificationChannel } from '../notifications/notifications.service';
 
 export interface TransitionData {
   toUserId?: string;
@@ -24,7 +25,11 @@ export interface TransitionResult {
 export class WorkflowService {
   private readonly logger = new Logger(WorkflowService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => NotificationsService))
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   /**
    * Check if an action is valid for the current status
@@ -221,15 +226,117 @@ export class WorkflowService {
           },
         });
       }
+
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: action.toUpperCase(),
+          resourceType: 'docket',
+          resourceId: docketId,
+          docketId,
+          workflowInstanceId: workflowInstanceId || null,
+          details: {
+            fromStatus: currentStatus,
+            toStatus: newStatus,
+            toUserId: data?.toUserId || null,
+            toDepartmentId: data?.toDepartmentId || null,
+            reason: data?.reason || null,
+          },
+        },
+      });
     });
 
     this.logger.log(`Docket ${docketId}: ${currentStatus} -> ${newStatus} via ${action}`);
+
+    // Send notifications based on action
+    await this.sendWorkflowNotifications(docket, action, userId, data);
 
     return {
       success: true,
       newStatus,
       message: `Docket transitioned to ${newStatus}`,
     };
+  }
+
+  /**
+   * Send notifications based on workflow action
+   */
+  private async sendWorkflowNotifications(
+    docket: { id: string; docketNumber: string; subject: string; createdBy: string | null },
+    action: WorkflowAction,
+    performedByUserId: string,
+    data?: TransitionData,
+  ): Promise<void> {
+    try {
+      // Get the performer's name
+      const performer = await this.prisma.user.findUnique({
+        where: { id: performedByUserId },
+        select: { firstName: true, username: true },
+      });
+      const performerName = performer?.firstName || performer?.username || 'Someone';
+
+      // Determine who to notify based on action
+      if (action === WorkflowAction.FORWARD && data?.toUserId) {
+        await this.notificationsService.queueNotification({
+          type: NotificationType.DOCKET_FORWARDED,
+          userId: data.toUserId,
+          docketId: docket.id,
+          channels: [NotificationChannel.EMAIL, NotificationChannel.SMS, NotificationChannel.IN_APP],
+          data: {
+            docketNumber: docket.docketNumber,
+            subject: docket.subject,
+            forwardedBy: performerName,
+            instructions: data.instructions || '',
+          },
+        });
+      }
+
+      if (action === WorkflowAction.APPROVE && docket.createdBy) {
+        await this.notificationsService.queueNotification({
+          type: NotificationType.DOCKET_APPROVED,
+          userId: docket.createdBy,
+          docketId: docket.id,
+          channels: [NotificationChannel.EMAIL, NotificationChannel.SMS, NotificationChannel.IN_APP],
+          data: {
+            docketNumber: docket.docketNumber,
+            subject: docket.subject,
+            approvedBy: performerName,
+            notes: data?.notes || '',
+          },
+        });
+      }
+
+      if (action === WorkflowAction.REJECT && docket.createdBy) {
+        await this.notificationsService.queueNotification({
+          type: NotificationType.DOCKET_REJECTED,
+          userId: docket.createdBy,
+          docketId: docket.id,
+          channels: [NotificationChannel.EMAIL, NotificationChannel.SMS, NotificationChannel.IN_APP],
+          data: {
+            docketNumber: docket.docketNumber,
+            subject: docket.subject,
+            rejectedBy: performerName,
+            reason: data?.reason || 'No reason provided',
+          },
+        });
+      }
+
+      if (action === WorkflowAction.CLOSE && docket.createdBy) {
+        await this.notificationsService.queueNotification({
+          type: NotificationType.DOCKET_CLOSED,
+          userId: docket.createdBy,
+          docketId: docket.id,
+          channels: [NotificationChannel.SMS, NotificationChannel.IN_APP],
+          data: {
+            docketNumber: docket.docketNumber,
+            subject: docket.subject,
+          },
+        });
+      }
+    } catch (error) {
+      // Don't fail the transaction if notification fails
+      this.logger.error(`Failed to send workflow notification: ${error}`);
+    }
   }
 
   /**

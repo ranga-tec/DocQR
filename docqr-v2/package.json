@@ -20,9 +20,13 @@
     "db:migrate": "npm run migrate --workspace=packages/database",
     "db:push": "npm run push --workspace=packages/database",
     "db:studio": "npm run studio --workspace=packages/database",
+    "db:seed": "ts-node packages/database/prisma/seed.ts",
     "docker:up": "docker-compose -f docker/docker-compose.yml up -d",
     "docker:down": "docker-compose -f docker/docker-compose.yml down",
     "docker:dev": "docker-compose -f docker/docker-compose.dev.yml up -d"
+  },
+  "prisma": {
+    "seed": "ts-node packages/database/prisma/seed.ts"
   },
   "keywords": [
     "document-management",
@@ -35,5 +39,10 @@
   "license": "MIT",
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }

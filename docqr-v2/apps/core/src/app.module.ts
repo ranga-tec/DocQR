@@ -12,9 +12,11 @@ import { RolesModule } from './modules/roles/roles.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
 import { DocketsModule } from './modules/dockets/dockets.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { OnlyOfficeModule } from './modules/onlyoffice/onlyoffice.module';
+import { RegistersModule } from './modules/registers/registers.module';
+import { SigningModule } from './modules/signing/signing.module';
+import { AdminModule } from './modules/admin/admin.module';
 // import { WorkflowModule } from './modules/workflow/workflow.module';
-// import { RegistersModule } from './modules/registers/registers.module';
-// import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -58,9 +60,11 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     DepartmentsModule,
     DocketsModule,
     NotificationsModule,
+    OnlyOfficeModule,
+    RegistersModule,
+    SigningModule,
+    AdminModule,
     // WorkflowModule,
-    // RegistersModule,
-    // AdminModule,
   ],
 })
 export class AppModule {}

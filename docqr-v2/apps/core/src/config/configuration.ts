@@ -62,6 +62,7 @@ export default () => ({
     size: parseInt(process.env.QR_CODE_SIZE || '300', 10),
     errorCorrection: process.env.QR_CODE_ERROR_CORRECTION || 'M',
     baseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
+    tokenExpiryDays: parseInt(process.env.QR_TOKEN_EXPIRY_DAYS || '30', 10), // Default 30 days, 0 = never expires
   },
 
   // Rate Limiting
@@ -95,6 +96,13 @@ export default () => ({
   onlyOffice: {
     serverUrl: process.env.ONLYOFFICE_URL || 'http://localhost:8080',
     jwtSecret: process.env.ONLYOFFICE_JWT_SECRET || 'onlyoffice-secret',
+  },
+
+  // OCR / text extraction
+  ocr: {
+    enabled: process.env.OCR_ENABLED !== 'false',
+    language: process.env.OCR_LANGUAGE || 'eng',
+    maxFileSize: parseInt(process.env.OCR_MAX_FILE_SIZE || '20971520', 10), // 20MB default
   },
 
   // Logging

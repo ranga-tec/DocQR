@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, CurrentUserData } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { DocketFilterParams, WorkflowAction } from '@docqr/shared';
 
 @ApiTags('dockets')
@@ -55,9 +56,10 @@ export class DocketsController {
   }
 
   @Get('qr/:token')
+  @Public()
   @ApiOperation({ summary: 'Get docket by QR token (public for scanning)' })
   findByQrToken(@Param('token') token: string) {
-    return this.docketsService.findByQrToken(token);
+    return this.docketsService.findByQrTokenPublic(token);
   }
 
   @Put(':id')
@@ -139,6 +141,44 @@ export class DocketsController {
     );
   }
 
+  @Post(':id/accept')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('docket:update')
+  @ApiOperation({ summary: 'Accept a forwarded docket for review' })
+  accept(
+    @Param('id') id: string,
+    @Body() data: TransitionData,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.docketsService.executeAction(
+      id,
+      WorkflowAction.ACCEPT,
+      user.id,
+      user.roles,
+      data,
+    );
+  }
+
+  @Post(':id/submit-approval')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('docket:forward')
+  @ApiOperation({ summary: 'Submit docket for approval' })
+  submitForApproval(
+    @Param('id') id: string,
+    @Body() data: TransitionData,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.docketsService.executeAction(
+      id,
+      WorkflowAction.SUBMIT_FOR_APPROVAL,
+      user.id,
+      user.roles,
+      data,
+    );
+  }
+
   @Post(':id/reject')
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionsGuard)
@@ -188,6 +228,42 @@ export class DocketsController {
     return this.docketsService.executeAction(
       id,
       WorkflowAction.REOPEN,
+      user.id,
+      user.roles,
+      data,
+    );
+  }
+
+  @Post(':id/return')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Return docket to previous handler' })
+  returnDocket(
+    @Param('id') id: string,
+    @Body() data: TransitionData,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.docketsService.executeAction(
+      id,
+      WorkflowAction.RETURN,
+      user.id,
+      user.roles,
+      data,
+    );
+  }
+
+  @Post(':id/archive')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('admin:access')
+  @ApiOperation({ summary: 'Archive docket' })
+  archive(
+    @Param('id') id: string,
+    @Body() data: TransitionData,
+    @CurrentUser() user: CurrentUserData,
+  ) {
+    return this.docketsService.executeAction(
+      id,
+      WorkflowAction.ARCHIVE,
       user.id,
       user.roles,
       data,

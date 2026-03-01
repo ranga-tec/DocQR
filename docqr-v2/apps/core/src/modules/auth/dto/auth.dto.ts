@@ -88,6 +88,31 @@ export class ChangePasswordDto {
   newPassword: string;
 }
 
+export class UpdateProfileDto {
+  @ApiPropertyOptional({ example: 'john@example.com' })
+  @IsEmail()
+  @IsOptional()
+  email?: string;
+
+  @ApiPropertyOptional({ example: 'John' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  firstName?: string;
+
+  @ApiPropertyOptional({ example: 'Doe' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
+  lastName?: string;
+
+  @ApiPropertyOptional({ example: '+1234567890' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(30)
+  phone?: string;
+}
+
 export class AuthResponseDto {
   @ApiProperty()
   accessToken: string;

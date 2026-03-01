@@ -14,6 +14,7 @@ import {
   RegisterDto,
   RefreshTokenDto,
   ChangePasswordDto,
+  UpdateProfileDto,
   AuthResponseDto,
   TokenPayload,
 } from './dto/auth.dto';
@@ -264,6 +265,43 @@ export class AuthService {
         isPrimary: ud.isPrimary,
       })),
     };
+  }
+
+  /**
+   * Update current user profile
+   */
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (dto.email && dto.email !== user.email) {
+      const existingEmail = await this.prisma.user.findUnique({
+        where: { email: dto.email },
+        select: { id: true },
+      });
+      if (existingEmail && existingEmail.id !== userId) {
+        throw new ConflictException('Email already registered');
+      }
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        email: dto.email,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        phone: dto.phone,
+      },
+    });
+
+    this.logger.log(`Profile updated for userId: ${userId}`);
+    return this.getProfile(userId);
   }
 
   /**

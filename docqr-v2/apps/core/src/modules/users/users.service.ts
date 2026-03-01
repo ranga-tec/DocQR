@@ -19,6 +19,7 @@ export interface CreateUserDto {
 }
 
 export interface UpdateUserDto {
+  email?: string;
   firstName?: string;
   lastName?: string;
   phone?: string;
@@ -177,10 +178,21 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    if (dto.email && dto.email !== user.email) {
+      const existingEmail = await this.prisma.user.findUnique({
+        where: { email: dto.email },
+        select: { id: true },
+      });
+      if (existingEmail && existingEmail.id !== id) {
+        throw new ConflictException('Email already exists');
+      }
+    }
+
     // Update basic info
-    const updated = await this.prisma.user.update({
+    await this.prisma.user.update({
       where: { id },
       data: {
+        email: dto.email,
         firstName: dto.firstName,
         lastName: dto.lastName,
         phone: dto.phone,

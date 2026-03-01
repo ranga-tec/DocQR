@@ -60,6 +60,7 @@ model User {
 
   // Notifications
   notifications     Notification[]
+  notificationPreference UserNotificationPreference?
 
   // Audit
   auditLogs         AuditLog[]
@@ -88,6 +89,28 @@ model User {
   @@index([username])
   @@index([isActive])
   @@map("users")
+}
+
+model UserNotificationPreference {
+  id               String   @id @default(uuid())
+  userId           String   @unique @map("user_id")
+  emailEnabled     Boolean  @default(true) @map("email_enabled")
+  smsEnabled       Boolean  @default(false) @map("sms_enabled")
+  inAppEnabled     Boolean  @default(true) @map("in_app_enabled")
+  quietHoursEnabled Boolean @default(false) @map("quiet_hours_enabled")
+  quietHoursStart  String?  @map("quiet_hours_start") // HH:mm
+  quietHoursEnd    String?  @map("quiet_hours_end")   // HH:mm
+  timeZone         String   @default("UTC") @map("time_zone")
+  deliveryMode     String   @default("immediate") @map("delivery_mode") // immediate, digest
+  digestFrequency  String   @default("daily") @map("digest_frequency")  // daily, weekly
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryMode])
+  @@index([quietHoursEnabled])
+  @@map("user_notification_preferences")
 }
 
 model RefreshToken {
@@ -292,6 +315,16 @@ model Docket {
   docketNumber        String    @unique @map("docket_number")
   qrToken             String    @unique @map("qr_token")
   qrCodePath          String?   @map("qr_code_path")
+  qrTokenExpiresAt    DateTime? @map("qr_token_expires_at")
+  qrTokenCreatedAt    DateTime  @default(now()) @map("qr_token_created_at")
+
+  // Sender Information
+  senderName          String?   @map("sender_name")
+  senderOrganization  String?   @map("sender_organization")
+  senderEmail         String?   @map("sender_email")
+  senderPhone         String?   @map("sender_phone")
+  senderAddress       String?   @map("sender_address")
+  receivedDate        DateTime? @map("received_date") @default(now())
 
   // Classification
   docketTypeId        String?   @map("docket_type_id")
@@ -380,6 +413,8 @@ model DocketAttachment {
   description     String?
   version         Int       @default(1)
   isPrimary       Boolean   @default(false) @map("is_primary")
+  ingestionSource String    @default("upload") @map("ingestion_source") // upload, scanner, api, onlyoffice
+  ingestionMetadata Json?   @map("ingestion_metadata")
 
   // OnlyOffice
   onlyofficeKey   String?   @map("onlyoffice_key")
@@ -392,6 +427,12 @@ model DocketAttachment {
   signedAt        DateTime? @map("signed_at")
   signedBy        String?   @map("signed_by")
   signatureData   Json?     @map("signature_data")
+
+  // Tamper Detection / Integrity
+  fileHash        String?   @map("file_hash")
+  hashAlgorithm   String?   @map("hash_algorithm") // sha256, sha512, md5
+  hashVerifiedAt  DateTime? @map("hash_verified_at")
+  integrityStatus String    @default("unverified") @map("integrity_status") // unverified, valid, tampered
 
   // Audit
   uploadedAt      DateTime  @default(now()) @map("uploaded_at")
@@ -410,9 +451,36 @@ model DocketAttachment {
   // Signing requests
   signingRequests SigningRequest[]
 
+  // Extracted text content (OCR/text extraction)
+  extractedContent DocumentContent?
+
   @@index([docketId])
   @@index([isPrimary])
+  @@index([ingestionSource])
   @@map("docket_attachments")
+}
+
+model DocumentContent {
+  id                String    @id @default(uuid())
+  attachmentId      String    @unique @map("attachment_id")
+  status            String    @default("pending") // pending, processing, completed, failed, skipped
+  extractionMethod  String?   @map("extraction_method") // ocr, text, hybrid, none
+  language          String?
+  confidence        Float?
+  content           String    @default("") @db.Text
+  pageCount         Int?      @map("page_count")
+  engine            String?
+  metadata          Json      @default("{}")
+  errorMessage      String?   @map("error_message")
+  processedAt       DateTime? @map("processed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  attachment        DocketAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([processedAt(sort: Desc)])
+  @@map("document_contents")
 }
 
 // ============================================
@@ -426,6 +494,7 @@ model DocketComment {
   commentType  String   @default("note") @map("comment_type") // note, observation, instruction, query, response, decision, system
   content      String
   attachmentId String?  @map("attachment_id")
+  parentCommentId String? @map("parent_comment_id")
   isInternal   Boolean  @default(false) @map("is_internal")
 
   // Immutable - only created_at, no updated_at
@@ -435,9 +504,12 @@ model DocketComment {
   // Relations
   docket       Docket           @relation(fields: [docketId], references: [id], onDelete: Cascade)
   attachment   DocketAttachment? @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+  parentComment DocketComment?   @relation("CommentThread", fields: [parentCommentId], references: [id], onDelete: SetNull)
+  replies      DocketComment[]   @relation("CommentThread")
   author       User             @relation(fields: [createdBy], references: [id], onDelete: Cascade)
 
   @@index([docketId])
+  @@index([parentCommentId])
   @@index([createdAt(sort: Desc)])
   @@map("docket_comments")
 }

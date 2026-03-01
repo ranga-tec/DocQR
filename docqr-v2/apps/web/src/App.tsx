@@ -8,10 +8,20 @@ import DashboardLayout from './components/layout/DashboardLayout';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import Inbox from './pages/Inbox';
 import DocketsList from './pages/dockets/DocketsList';
 import CreateDocket from './pages/dockets/CreateDocket';
 import DocketDetail from './pages/dockets/DocketDetail';
 import QrScan from './pages/QrScan';
+import QrScanner from './pages/QrScanner';
+import DocumentView from './pages/DocumentView';
+import Users from './pages/Users';
+import Departments from './pages/Departments';
+import Roles from './pages/Roles';
+import Settings from './pages/Settings';
+import Registers from './pages/Registers';
+import Admin from './pages/Admin';
+import DocketTypes from './pages/DocketTypes';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +43,16 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/qr/:token" element={<QrScan />} />
 
+            {/* Document viewer (full screen, protected) */}
+            <Route
+              path="/document/:attachmentId"
+              element={
+                <ProtectedRoute>
+                  <DocumentView />
+                </ProtectedRoute>
+              }
+            />
+
             {/* Protected routes */}
             <Route
               element={
@@ -45,10 +65,15 @@ function App() {
               <Route path="/dockets" element={<DocketsList />} />
               <Route path="/dockets/new" element={<CreateDocket />} />
               <Route path="/dockets/:id" element={<DocketDetail />} />
-              <Route path="/inbox" element={<Dashboard />} />
-              <Route path="/users" element={<Dashboard />} />
-              <Route path="/departments" element={<Dashboard />} />
-              <Route path="/settings" element={<Dashboard />} />
+              <Route path="/inbox" element={<Inbox />} />
+              <Route path="/scan" element={<QrScanner />} />
+              <Route path="/users" element={<Users />} />
+              <Route path="/departments" element={<Departments />} />
+              <Route path="/roles" element={<Roles />} />
+              <Route path="/docket-types" element={<DocketTypes />} />
+              <Route path="/registers" element={<Registers />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/admin" element={<Admin />} />
             </Route>
 
             {/* Redirect root to dashboard */}
