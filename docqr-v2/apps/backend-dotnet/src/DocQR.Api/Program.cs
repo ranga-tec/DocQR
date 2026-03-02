@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Npgsql;
 using DocQR.Api.Data;
 using DocQR.Api.Services;
 using DocQR.Api.Configuration;
@@ -14,8 +15,10 @@ builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("Jwt"))
 builder.Services.Configure<StorageSettings>(builder.Configuration.GetSection("Storage"));
 
 // Database
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+var rawConnectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? builder.Configuration["DATABASE_URL"]
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+var connectionString = NormalizePostgresConnectionString(rawConnectionString);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 
@@ -157,3 +160,52 @@ Console.WriteLine(@$"
 ");
 
 app.Run();
+
+static string NormalizePostgresConnectionString(string rawConnectionString)
+{
+    if (string.IsNullOrWhiteSpace(rawConnectionString))
+    {
+        throw new InvalidOperationException("Database connection string is empty.");
+    }
+
+    if (!rawConnectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+        !rawConnectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        return rawConnectionString;
+    }
+
+    var uri = new Uri(rawConnectionString);
+    var userInfoParts = uri.UserInfo.Split(':', 2);
+    var builder = new NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.IsDefaultPort ? 5432 : uri.Port,
+        Database = uri.AbsolutePath.Trim('/'),
+        Username = userInfoParts.Length > 0 ? Uri.UnescapeDataString(userInfoParts[0]) : string.Empty,
+        Password = userInfoParts.Length > 1 ? Uri.UnescapeDataString(userInfoParts[1]) : string.Empty
+    };
+
+    var query = uri.Query.TrimStart('?');
+    if (!string.IsNullOrWhiteSpace(query))
+    {
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var keyValue = pair.Split('=', 2);
+            var key = Uri.UnescapeDataString(keyValue[0]).ToLowerInvariant();
+            var value = keyValue.Length > 1 ? Uri.UnescapeDataString(keyValue[1]) : string.Empty;
+
+            if (key is "sslmode" && Enum.TryParse<SslMode>(value, true, out var sslMode))
+            {
+                builder.SslMode = sslMode;
+                continue;
+            }
+
+            if (key is "pooling" && bool.TryParse(value, out var pooling))
+            {
+                builder.Pooling = pooling;
+            }
+        }
+    }
+
+    return builder.ConnectionString;
+}
