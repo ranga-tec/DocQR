@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { getStatusColor, getPriorityColor, formatRelativeTime } from '../../lib/utils';
+import { extractDocketList } from '../../lib/docket';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -17,24 +18,6 @@ const STATUS_OPTIONS = [
   { value: 'REJECTED', label: 'Rejected' },
   { value: 'CLOSED', label: 'Closed' },
 ];
-
-interface Docket {
-  id: string;
-  docketNumber: string;
-  subject: string;
-  description?: string;
-  status: string;
-  priority: string;
-  createdAt: string;
-  createdBy: {
-    firstName?: string;
-    lastName?: string;
-    username: string;
-  };
-  docketType?: {
-    name: string;
-  };
-}
 
 export default function DocketsList() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -74,6 +57,8 @@ export default function DocketsList() {
       return prev;
     });
   };
+
+  const docketList = extractDocketList(data?.data);
 
   return (
     <div className="space-y-6">
@@ -138,9 +123,9 @@ export default function DocketsList() {
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
             <span>All Dockets</span>
-            {data?.data?.total && (
+            {docketList.total > 0 && (
               <span className="text-sm font-normal text-muted-foreground">
-                {data.data.total} total
+                {docketList.total} total
               </span>
             )}
           </CardTitle>
@@ -150,9 +135,9 @@ export default function DocketsList() {
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
-          ) : (data?.data?.data?.length ?? 0) > 0 ? (
+          ) : docketList.items.length > 0 ? (
             <div className="space-y-2">
-              {data?.data?.data?.map((docket: Docket) => (
+              {docketList.items.map((docket) => (
                 <Link
                   key={docket.id}
                   to={`/dockets/${docket.id}`}
@@ -178,7 +163,7 @@ export default function DocketsList() {
                       )}
                       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                         <span>
-                          Created by {docket.createdBy.firstName || docket.createdBy.username}
+                          Created by {docket.createdBy?.firstName || docket.createdBy?.username || 'Unknown'}
                         </span>
                         <span>{formatRelativeTime(docket.createdAt)}</span>
                       </div>
@@ -196,7 +181,7 @@ export default function DocketsList() {
               ))}
 
               {/* Pagination */}
-              {(data?.data?.totalPages ?? 0) > 1 && (
+              {docketList.totalPages > 1 && (
                 <div className="flex items-center justify-center gap-2 pt-4">
                   <Button
                     variant="outline"
@@ -212,12 +197,12 @@ export default function DocketsList() {
                     Previous
                   </Button>
                   <span className="text-sm text-muted-foreground">
-                    Page {page} of {data?.data?.totalPages ?? 0}
+                    Page {page} of {docketList.totalPages}
                   </span>
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={page >= (data?.data?.totalPages ?? 0)}
+                    disabled={page >= docketList.totalPages}
                     onClick={() =>
                       setSearchParams((prev) => {
                         prev.set('page', String(page + 1));

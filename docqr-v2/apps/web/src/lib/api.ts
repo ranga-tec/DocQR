@@ -349,7 +349,18 @@ export const notificationsApi = {
   list: (params?: { limit?: number; offset?: number; unreadOnly?: boolean }) =>
     api.get('/notifications', { params }),
 
-  unreadCount: () => api.get('/notifications/unread-count'),
+  unreadCount: async () => {
+    try {
+      return await api.get('/notifications/unread-count');
+    } catch (error) {
+      const status = (error as AxiosError).response?.status;
+      if (status === 404) {
+        // Some deployments may not expose notifications yet.
+        return { data: { count: 0 } };
+      }
+      throw error;
+    }
+  },
 
   markAsRead: (id: string) => api.post(`/notifications/${id}/read`),
 
@@ -477,7 +488,7 @@ export const rolesApi = {
   }),
 
   update: (id: string, data: Record<string, unknown>) =>
-    api.put(`/roles/${id}`, data),
+    api.patch(`/roles/${id}`, data),
 
   delete: (id: string) => api.delete(`/roles/${id}`),
 

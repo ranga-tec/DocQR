@@ -10,6 +10,25 @@ interface ForwardModalProps {
   isLoading?: boolean;
 }
 
+function extractList<T>(input: unknown): T[] {
+  if (Array.isArray(input)) {
+    return input as T[];
+  }
+  if (!input || typeof input !== 'object') {
+    return [];
+  }
+
+  const first = (input as { data?: unknown }).data;
+  if (Array.isArray(first)) {
+    return first as T[];
+  }
+  if (first && typeof first === 'object' && Array.isArray((first as { data?: unknown }).data)) {
+    return (first as { data: T[] }).data;
+  }
+
+  return [];
+}
+
 export default function ForwardModal({ isOpen, onClose, onSubmit, isLoading }: ForwardModalProps) {
   const [assignmentType, setAssignmentType] = useState<'user' | 'department'>('user');
   const [selectedUserId, setSelectedUserId] = useState('');
@@ -27,6 +46,9 @@ export default function ForwardModal({ isOpen, onClose, onSubmit, isLoading }: F
     queryFn: () => departmentsApi.list(),
     enabled: isOpen && assignmentType === 'department',
   });
+
+  const userOptions = extractList<{ id: string; firstName?: string; lastName?: string; username: string; email: string }>(users?.data);
+  const departmentOptions = extractList<{ id: string; name: string; code: string }>(departments?.data);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,7 +125,7 @@ export default function ForwardModal({ isOpen, onClose, onSubmit, isLoading }: F
                   required
                 >
                   <option value="">-- Select a user --</option>
-                  {users?.data?.data?.map((user: { id: string; firstName?: string; lastName?: string; username: string; email: string }) => (
+                  {userOptions.map((user) => (
                     <option key={user.id} value={user.id}>
                       {user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.username} ({user.email})
                     </option>
@@ -123,7 +145,7 @@ export default function ForwardModal({ isOpen, onClose, onSubmit, isLoading }: F
                   required
                 >
                   <option value="">-- Select a department --</option>
-                  {departments?.data?.map((dept: { id: string; name: string; code: string }) => (
+                  {departmentOptions.map((dept) => (
                     <option key={dept.id} value={dept.id}>
                       {dept.name} ({dept.code})
                     </option>

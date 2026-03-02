@@ -4,28 +4,11 @@ import { docketsApi } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { getStatusColor, getPriorityColor, formatDate } from '../lib/utils';
-
-interface Docket {
-  id: string;
-  docketNumber: string;
-  subject: string;
-  description?: string;
-  status: string;
-  priority: string;
-  createdAt: string;
-  createdBy?: {
-    firstName?: string;
-    lastName?: string;
-    username: string;
-  };
-  docketType?: {
-    name: string;
-  };
-}
+import { normalizeDocket, type NormalizedDocket } from '../lib/docket';
 
 export default function QrScan() {
   const { token } = useParams<{ token: string }>();
-  const [docket, setDocket] = useState<Docket | null>(null);
+  const [docket, setDocket] = useState<NormalizedDocket | null>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -39,7 +22,10 @@ export default function QrScan() {
     const fetchDocket = async () => {
       try {
         const response = await docketsApi.getByQrToken(token);
-        setDocket(response.data);
+        const payload = (response.data && typeof response.data === 'object' && 'data' in response.data)
+          ? (response.data as { data: unknown }).data
+          : response.data;
+        setDocket(normalizeDocket(payload));
       } catch {
         setError('Docket not found or QR code has expired');
       } finally {

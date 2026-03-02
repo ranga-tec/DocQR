@@ -5,32 +5,7 @@ import { docketsApi } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { getStatusColor, getPriorityColor, formatDate } from '../lib/utils';
-
-interface Docket {
-  id: string;
-  docketNumber: string;
-  subject: string;
-  status: string;
-  priority: string;
-  createdAt: string;
-  createdBy: {
-    firstName?: string;
-    lastName?: string;
-    username: string;
-  };
-  docketType?: {
-    name: string;
-  };
-  currentAssignment?: {
-    assignedAt: string;
-    instructions?: string;
-    assignedBy?: {
-      firstName?: string;
-      lastName?: string;
-      username: string;
-    };
-  };
-}
+import { extractDocketList } from '../lib/docket';
 
 type FilterTab = 'pending' | 'action_required' | 'forwarded' | 'all';
 
@@ -46,7 +21,8 @@ export default function Inbox() {
     }),
   });
 
-  const dockets: Docket[] = data?.data?.data || [];
+  const docketList = extractDocketList(data?.data);
+  const dockets = docketList.items;
 
   function getStatusFilter(tab: FilterTab): string | undefined {
     switch (tab) {

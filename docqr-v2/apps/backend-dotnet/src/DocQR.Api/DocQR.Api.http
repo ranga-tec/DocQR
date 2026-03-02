@@ -1,0 +1,6 @@
+@DocQR.Api_HostAddress = http://localhost:5116
+
+GET {{DocQR.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { getStatusColor, getPriorityColor, formatDate } from '../../lib/utils';
 import { isDirectScannerAvailable, pickScannedFile, scanDocumentFromProvider } from '../../lib/scanner';
+import { normalizeDocket } from '../../lib/docket';
 import ForwardModal from '../../components/ForwardModal';
 import ReturnModal from '../../components/ReturnModal';
 import RejectModal from '../../components/RejectModal';
@@ -275,8 +276,17 @@ export default function DocketDetail() {
     );
   }
 
-  const d = docket.data;
-  const actions = allowedActions?.data || [];
+  const docketPayload = (docket.data && typeof docket.data === 'object' && 'data' in docket.data)
+    ? (docket.data as { data: unknown }).data
+    : docket.data;
+  const d = normalizeDocket(docketPayload);
+  const actions = Array.isArray(allowedActions?.data)
+    ? allowedActions.data.map((entry: unknown) => {
+        if (typeof entry === 'string') return entry;
+        const obj = entry as { action?: string };
+        return obj?.action || '';
+      }).filter(Boolean)
+    : [];
   const commentTree: CommentNode[] = comments?.data || [];
 
   const renderCommentNode = (comment: CommentNode, depth = 0): React.ReactNode => (

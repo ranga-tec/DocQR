@@ -15,6 +15,25 @@ const PRIORITY_OPTIONS = [
   { value: 'URGENT', label: 'Urgent' },
 ];
 
+function extractList<T>(input: unknown): T[] {
+  if (Array.isArray(input)) {
+    return input as T[];
+  }
+  if (!input || typeof input !== 'object') {
+    return [];
+  }
+
+  const first = (input as { data?: unknown }).data;
+  if (Array.isArray(first)) {
+    return first as T[];
+  }
+  if (first && typeof first === 'object' && Array.isArray((first as { data?: unknown }).data)) {
+    return (first as { data: T[] }).data;
+  }
+
+  return [];
+}
+
 export default function CreateDocket() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,25 +76,38 @@ export default function CreateDocket() {
     queryFn: () => usersApi.list(),
   });
 
+  const docketTypeOptions = extractList<{ id: string; name: string }>(docketTypes?.data);
+  const userOptions = extractList<{ id: string; firstName?: string; lastName?: string; username: string }>(users?.data);
+
   const createMutation = useMutation({
     mutationFn: async (data: Parameters<typeof docketsApi.create>[0]) => {
       const response = await docketsApi.create(data);
       const docketId: string = response.data.id;
+      const failedUploads: string[] = [];
 
       if (initialAttachments.length > 0) {
-        await Promise.all(
-          initialAttachments.map((item) => {
+        for (const item of initialAttachments) {
+          try {
             if (item.source === 'scanner') {
-              return docketsApi.scanAttachment(docketId, item.file, item.metadata);
+              await docketsApi.scanAttachment(docketId, item.file, item.metadata);
+            } else {
+              await docketsApi.uploadAttachment(docketId, item.file);
             }
-            return docketsApi.uploadAttachment(docketId, item.file);
-          }),
-        );
+          } catch {
+            failedUploads.push(item.file.name);
+          }
+        }
       }
 
-      return response;
+      return {
+        response,
+        failedUploads,
+      };
     },
-    onSuccess: (response) => {
+    onSuccess: ({ response, failedUploads }) => {
+      if (failedUploads.length > 0) {
+        alert(`Docket created, but these files failed to upload: ${failedUploads.join(', ')}`);
+      }
       navigate(`/dockets/${response.data.id}`);
     },
     onError: (err: unknown) => {
@@ -126,9 +158,19 @@ export default function CreateDocket() {
   const handleScan = async () => {
     setScanError('');
     try {
-      const scanned = isDirectScannerAvailable()
-        ? await scanDocumentFromProvider()
-        : await pickScannedFile();
+      let scanned: Awaited<ReturnType<typeof scanDocumentFromProvider>>;
+
+      if (isDirectScannerAvailable()) {
+        try {
+          scanned = await scanDocumentFromProvider();
+        } catch (providerError) {
+          const providerMessage = providerError instanceof Error ? providerError.message : 'unknown provider error';
+          scanned = await pickScannedFile();
+          setScanError(`Direct scanner unavailable (${providerMessage}). Please select a scanned file.`);
+        }
+      } else {
+        scanned = await pickScannedFile();
+      }
 
       setInitialAttachments((prev) => [
         ...prev,
@@ -212,7 +254,7 @@ export default function CreateDocket() {
                   className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
                 >
                   <option value="">Select type...</option>
-                  {docketTypes?.data?.data?.map((type: { id: string; name: string }) => (
+                  {docketTypeOptions.map((type) => (
                     <option key={type.id} value={type.id}>
                       {type.name}
                     </option>
@@ -248,7 +290,7 @@ export default function CreateDocket() {
                 className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
               >
                 <option value="">Do not assign yet</option>
-                {users?.data?.data?.map((user: { id: string; firstName?: string; lastName?: string; username: string }) => (
+                {userOptions.map((user) => (
                   <option key={user.id} value={user.id}>
                     {user.firstName
                       ? `${user.firstName} ${user.lastName || ''}`

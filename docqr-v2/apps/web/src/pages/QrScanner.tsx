@@ -107,12 +107,43 @@ export default function QrScanner() {
 
   const handleQRResult = (data: string) => {
     stopCamera();
-    // Extract token from URL if it's a full URL
-    let token = data;
-    const qrMatch = data.match(/\/qr\/([a-zA-Z0-9-]+)/);
-    if (qrMatch) {
-      token = qrMatch[1];
-    }
+    const extractToken = (raw: string): string => {
+      const trimmed = raw.trim();
+
+      // Direct token
+      if (!trimmed.includes('/')) {
+        return trimmed;
+      }
+
+      // URL form
+      try {
+        const parsed = new URL(trimmed);
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        const markerIndex = parts.findIndex((part) =>
+          part.toLowerCase() === 'qr'
+          || part.toLowerCase() === 'scan'
+          || part.toLowerCase() === 'dockets',
+        );
+
+        if (markerIndex >= 0 && parts[markerIndex + 1]) {
+          // /qr/{token} or /scan/{token} or /dockets/qr/{token}
+          if (parts[markerIndex].toLowerCase() === 'dockets' && parts[markerIndex + 1]?.toLowerCase() === 'qr') {
+            return parts[markerIndex + 2] || trimmed;
+          }
+          return parts[markerIndex + 1];
+        }
+      } catch {
+        // Not a fully qualified URL, continue with regex fallback.
+      }
+
+      const match = trimmed.match(/(?:\/qr\/|\/scan\/|\/dockets\/qr\/)([A-Za-z0-9-]+)/i);
+      if (match?.[1]) return match[1];
+
+      const segments = trimmed.split('/').filter(Boolean);
+      return segments[segments.length - 1] || trimmed;
+    };
+
+    const token = extractToken(data);
     // Navigate to the QR scan result page
     navigate(`/qr/${token}`);
   };
