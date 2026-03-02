@@ -16,7 +16,7 @@ public class Register
     public string Name { get; set; } = string.Empty;
 
     [Required]
-    [Column("code")]
+    [Column("register_code")]
     [MaxLength(20)]
     public string Code { get; set; } = string.Empty;
 
@@ -26,9 +26,16 @@ public class Register
     [Column("department_id")]
     public string? DepartmentId { get; set; }
 
-    [Column("location")]
-    [MaxLength(200)]
-    public string? Location { get; set; }
+    [Required]
+    [Column("register_type")]
+    [MaxLength(20)]
+    public string RegisterType { get; set; } = "general";
+
+    [Column("year_start")]
+    public DateTime? YearStart { get; set; }
+
+    [Column("year_end")]
+    public DateTime? YearEnd { get; set; }
 
     [Column("is_active")]
     public bool IsActive { get; set; } = true;
@@ -36,11 +43,14 @@ public class Register
     [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    [Column("updated_at")]
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
     [Column("created_by")]
     public string? CreatedBy { get; set; }
+
+    [NotMapped]
+    public string? Location { get; set; }
+
+    [NotMapped]
+    public DateTime UpdatedAt { get; set; }
 
     // Navigation properties
     public Department? Department { get; set; }
@@ -59,37 +69,27 @@ public class RegisterEntry
     public string RegisterId { get; set; } = string.Empty;
 
     [Column("entry_number")]
-    public int EntryNumber { get; set; }
+    [MaxLength(50)]
+    public string EntryNumber { get; set; } = string.Empty;
+
+    [Column("entry_date")]
+    public DateTime EntryDate { get; set; } = DateTime.UtcNow;
 
     [Column("docket_id")]
     public string? DocketId { get; set; }
-
-    [Column("entry_type")]
-    [MaxLength(50)]
-    public string EntryType { get; set; } = "incoming"; // incoming, outgoing, internal
 
     [Required]
     [Column("subject")]
     [MaxLength(255)]
     public string Subject { get; set; } = string.Empty;
 
-    [Column("sender_name")]
+    [Column("from_party")]
     [MaxLength(200)]
-    public string? SenderName { get; set; }
+    public string? FromParty { get; set; }
 
-    [Column("recipient_name")]
+    [Column("to_party")]
     [MaxLength(200)]
-    public string? RecipientName { get; set; }
-
-    [Column("reference_number")]
-    [MaxLength(100)]
-    public string? ReferenceNumber { get; set; }
-
-    [Column("date_received")]
-    public DateTime? DateReceived { get; set; }
-
-    [Column("date_sent")]
-    public DateTime? DateSent { get; set; }
+    public string? ToParty { get; set; }
 
     [Column("remarks")]
     public string? Remarks { get; set; }
@@ -99,6 +99,42 @@ public class RegisterEntry
 
     [Column("created_by")]
     public string? CreatedBy { get; set; }
+
+    [NotMapped]
+    public string EntryType { get; set; } = "general";
+
+    [NotMapped]
+    public string? SenderName
+    {
+        get => FromParty;
+        set => FromParty = value;
+    }
+
+    [NotMapped]
+    public string? RecipientName
+    {
+        get => ToParty;
+        set => ToParty = value;
+    }
+
+    [NotMapped]
+    public string? ReferenceNumber { get; set; }
+
+    [NotMapped]
+    public DateTime? DateReceived
+    {
+        get => EntryDate;
+        set
+        {
+            if (value.HasValue)
+            {
+                EntryDate = value.Value;
+            }
+        }
+    }
+
+    [NotMapped]
+    public DateTime? DateSent { get; set; }
 
     // Navigation properties
     public Register Register { get; set; } = null!;
