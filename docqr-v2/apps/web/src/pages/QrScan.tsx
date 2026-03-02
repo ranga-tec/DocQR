@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { docketsApi } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { getStatusColor, getPriorityColor, formatDate } from '../lib/utils';
 import { normalizeDocket, type NormalizedDocket } from '../lib/docket';
+import { useAuth } from '../context/AuthContext';
 
 export default function QrScan() {
   const { token } = useParams<{ token: string }>();
+  const navigate = useNavigate();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [docket, setDocket] = useState<NormalizedDocket | null>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -36,12 +40,21 @@ export default function QrScan() {
     fetchDocket();
   }, [token]);
 
-  if (isLoading) {
+  useEffect(() => {
+    if (authLoading || !isAuthenticated || !docket?.id) {
+      return;
+    }
+
+    setIsRedirecting(true);
+    navigate(`/dockets/${docket.id}`, { replace: true });
+  }, [authLoading, isAuthenticated, docket?.id, navigate]);
+
+  if (isLoading || isRedirecting) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading docket...</p>
+          <p className="text-muted-foreground">{isRedirecting ? 'Opening full docket...' : 'Loading docket...'}</p>
         </div>
       </div>
     );
@@ -59,7 +72,7 @@ export default function QrScan() {
             </div>
             <h2 className="text-xl font-semibold mb-2">Docket Not Found</h2>
             <p className="text-muted-foreground mb-4">{error}</p>
-            <Link to="/login">
+            <Link to="/login" state={{ from: { pathname: token ? `/qr/${token}` : '/dashboard' } }}>
               <Button>Sign in to access dockets</Button>
             </Link>
           </CardContent>
@@ -134,14 +147,24 @@ export default function QrScan() {
             </div>
 
             <div className="pt-4 border-t">
-              <p className="text-sm text-muted-foreground text-center">
-                Sign in to view full details, attachments, and take actions on this docket.
-              </p>
-              <div className="flex justify-center mt-4">
-                <Link to="/login">
-                  <Button>Sign In for Full Access</Button>
-                </Link>
-              </div>
+              {isAuthenticated ? (
+                <div className="flex justify-center mt-2">
+                  <Link to={`/dockets/${docket.id}`}>
+                    <Button>Open Full Docket</Button>
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground text-center">
+                    Sign in to view full details, attachments, and take actions on this docket.
+                  </p>
+                  <div className="flex justify-center mt-4">
+                    <Link to="/login" state={{ from: { pathname: `/dockets/${docket.id}` } }}>
+                      <Button>Sign In for Full Access</Button>
+                    </Link>
+                  </div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
