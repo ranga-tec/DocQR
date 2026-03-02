@@ -1,0 +1,6 @@
+bin/
+obj/
+out_verify/
+.vs/
+*.user
+*.suo
