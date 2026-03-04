@@ -47,30 +47,38 @@ public class UsersController : ControllerBase
 
         var total = await query.CountAsync();
 
-        var usersRaw = await query
+        var users = await query
             .OrderBy(u => u.Username)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .Select(u => new
             {
                 id = u.Id,
+                email = u.Email,
                 username = u.Username,
                 firstName = u.FirstName,
-                lastName = u.LastName
+                lastName = u.LastName,
+                phone = u.Phone,
+                isActive = u.IsActive,
+                createdAt = u.CreatedAt,
+                roles = u.UserRoles
+                    .Select(ur => new
+                    {
+                        id = ur.Role.Id,
+                        name = ur.Role.Name,
+                        displayName = ur.Role.DisplayName
+                    })
+                    .ToList(),
+                departments = u.UserDepartments
+                    .Select(ud => new
+                    {
+                        id = ud.Department.Id,
+                        name = ud.Department.Name,
+                        code = ud.Department.Code
+                    })
+                    .ToList()
             })
             .ToListAsync();
-
-        // Compute fullName in memory
-        var users = usersRaw.Select(u => new
-        {
-            u.id,
-            u.username,
-            u.firstName,
-            u.lastName,
-            fullName = string.IsNullOrEmpty(u.firstName) && string.IsNullOrEmpty(u.lastName)
-                ? null
-                : $"{u.firstName} {u.lastName}".Trim()
-        }).ToList();
 
         // Wrap in data property for frontend compatibility
         return Ok(new
