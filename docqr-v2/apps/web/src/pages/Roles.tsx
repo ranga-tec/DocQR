@@ -48,6 +48,35 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function extractList<T>(input: unknown): T[] {
+  if (Array.isArray(input)) {
+    return input as T[];
+  }
+  if (!input || typeof input !== 'object') {
+    return [];
+  }
+
+  const root = input as { data?: unknown; items?: unknown };
+  if (Array.isArray(root.data)) {
+    return root.data as T[];
+  }
+  if (Array.isArray(root.items)) {
+    return root.items as T[];
+  }
+
+  if (root.data && typeof root.data === 'object') {
+    const nested = root.data as { data?: unknown; items?: unknown };
+    if (Array.isArray(nested.data)) {
+      return nested.data as T[];
+    }
+    if (Array.isArray(nested.items)) {
+      return nested.items as T[];
+    }
+  }
+
+  return [];
+}
+
 export default function Roles() {
   const queryClient = useQueryClient();
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
@@ -79,8 +108,8 @@ export default function Roles() {
     queryFn: () => rolesApi.getPermissions(),
   });
 
-  const roles: Role[] = rolesData?.data?.data || rolesData?.data || [];
-  const permissions: Permission[] = permissionsData?.data?.data || permissionsData?.data || [];
+  const roles: Role[] = extractList<Role>(rolesData?.data);
+  const permissions: Permission[] = extractList<Permission>(permissionsData?.data);
 
   const permissionsByResource = useMemo(() => {
     return permissions.reduce((acc, perm) => {
@@ -164,6 +193,7 @@ export default function Roles() {
         <div>
           <h1 className="text-2xl font-bold">Roles & Permissions</h1>
           <p className="text-muted-foreground">Manage role creation, updates, and access controls</p>
+          <p className="text-xs text-muted-foreground mt-1">System roles are locked. Create custom roles to edit or delete.</p>
         </div>
         <Button onClick={() => setShowCreateModal(true)}>
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -240,11 +270,15 @@ export default function Roles() {
                       <Button variant="ghost" size="sm" onClick={() => setSelectedRole(role)}>
                         View
                       </Button>
-                      {!role.isSystemRole ? (
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(role)}>
-                          Edit
-                        </Button>
-                      ) : null}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEdit(role)}
+                        disabled={role.isSystemRole}
+                        title={role.isSystemRole ? 'System roles cannot be edited or deleted' : undefined}
+                      >
+                        Edit
+                      </Button>
                     </div>
                   </div>
                 );
@@ -468,16 +502,16 @@ export default function Roles() {
                 <Button variant="outline" onClick={() => setSelectedRole(null)}>
                   Close
                 </Button>
-                {!selectedRole.isSystemRole ? (
-                  <Button
-                    onClick={() => {
-                      setSelectedRole(null);
-                      openEdit(selectedRole);
-                    }}
-                  >
-                    Edit Role
-                  </Button>
-                ) : null}
+                <Button
+                  onClick={() => {
+                    setSelectedRole(null);
+                    openEdit(selectedRole);
+                  }}
+                  disabled={selectedRole.isSystemRole}
+                  title={selectedRole.isSystemRole ? 'System roles cannot be edited or deleted' : undefined}
+                >
+                  Edit Role
+                </Button>
               </div>
             </div>
           </div>
