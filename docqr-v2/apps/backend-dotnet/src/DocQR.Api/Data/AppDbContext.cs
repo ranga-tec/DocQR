@@ -24,6 +24,7 @@ public class AppDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<Register> Registers => Set<Register>();
     public DbSet<RegisterEntry> RegisterEntries => Set<RegisterEntry>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -211,6 +212,13 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(n => n.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // AuditLog
+        modelBuilder.Entity<AuditLog>()
+            .HasOne(a => a.User)
+            .WithMany()
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         // Configure JSONB columns for PostgreSQL
         modelBuilder.Entity<Role>()
