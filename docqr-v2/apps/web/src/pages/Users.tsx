@@ -44,12 +44,100 @@ interface DepartmentOption {
   code: string;
 }
 
+interface PaginationMeta {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   const err = error as { response?: { data?: { message?: string | string[] } } };
   const message = err?.response?.data?.message;
   if (Array.isArray(message)) return message.join(', ');
   if (message) return message;
   return fallback;
+}
+
+function extractList<T>(input: unknown): T[] {
+  if (Array.isArray(input)) {
+    return input as T[];
+  }
+  if (!input || typeof input !== 'object') {
+    return [];
+  }
+
+  const root = input as { data?: unknown; items?: unknown };
+  if (Array.isArray(root.data)) {
+    return root.data as T[];
+  }
+  if (Array.isArray(root.items)) {
+    return root.items as T[];
+  }
+
+  if (root.data && typeof root.data === 'object') {
+    const nested = root.data as { data?: unknown; items?: unknown };
+    if (Array.isArray(nested.data)) {
+      return nested.data as T[];
+    }
+    if (Array.isArray(nested.items)) {
+      return nested.items as T[];
+    }
+  }
+
+  return [];
+}
+
+function extractNumber(input: unknown, keys: string[], fallback: number): number {
+  if (!input || typeof input !== 'object') return fallback;
+  const root = input as Record<string, unknown>;
+
+  for (const key of keys) {
+    const value = root[key];
+    if (typeof value === 'number') return value;
+  }
+
+  const data = root.data;
+  if (data && typeof data === 'object') {
+    const nested = data as Record<string, unknown>;
+    for (const key of keys) {
+      const value = nested[key];
+      if (typeof value === 'number') return value;
+    }
+
+    const nestedMeta = nested.meta;
+    if (nestedMeta && typeof nestedMeta === 'object') {
+      const meta = nestedMeta as Record<string, unknown>;
+      for (const key of keys) {
+        const value = meta[key];
+        if (typeof value === 'number') return value;
+      }
+    }
+  }
+
+  const rootMeta = root.meta;
+  if (rootMeta && typeof rootMeta === 'object') {
+    const meta = rootMeta as Record<string, unknown>;
+    for (const key of keys) {
+      const value = meta[key];
+      if (typeof value === 'number') return value;
+    }
+  }
+
+  return fallback;
+}
+
+function extractPagination(input: unknown, fallbackPageSize: number): PaginationMeta {
+  const total = extractNumber(input, ['total'], 0);
+  const page = extractNumber(input, ['page'], 1);
+  const pageSize = extractNumber(input, ['pageSize', 'limit'], fallbackPageSize);
+  const totalPages = extractNumber(
+    input,
+    ['totalPages'],
+    Math.max(1, Math.ceil(total / Math.max(pageSize, 1))),
+  );
+
+  return { total, page, pageSize, totalPages };
 }
 
 export default function Users() {
@@ -97,11 +185,12 @@ export default function Users() {
     queryFn: () => departmentsApi.list(),
   });
 
-  const users: User[] = data?.data?.data || [];
-  const total = data?.data?.meta?.total || 0;
-  const totalPages = data?.data?.meta?.totalPages || Math.max(1, Math.ceil(total / 20));
-  const roleOptions: RoleOption[] = rolesData?.data?.data || rolesData?.data || [];
-  const departmentOptions: DepartmentOption[] = departmentsData?.data?.data || departmentsData?.data || [];
+  const users: User[] = extractList<User>(data?.data);
+  const pagination = extractPagination(data?.data, 20);
+  const total = pagination.total;
+  const totalPages = pagination.totalPages;
+  const roleOptions: RoleOption[] = extractList<RoleOption>(rolesData?.data);
+  const departmentOptions: DepartmentOption[] = extractList<DepartmentOption>(departmentsData?.data);
 
   const usersById = useMemo(
     () => new Map(users.map((user) => [user.id, user])),
