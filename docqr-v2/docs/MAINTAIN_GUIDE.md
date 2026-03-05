@@ -94,6 +94,7 @@ Primary controllers currently implemented:
 - `RegistersController` -> `/api/v1/registers/*`
 - `NotificationsController` -> `/api/v1/notifications/*`
 - `OnlyOfficeController` -> `/api/v1/onlyoffice/*`
+- `AdminController` -> `/api/v1/admin/*` (`stats`, `audit-logs`, `reports/sla`, `reports/workload`, `reports/turnaround`)
 
 Also mapped:
 
@@ -181,7 +182,7 @@ Recommended production abstraction:
 
 ## 4.3 API Drift Notes
 
-Some frontend wrappers reference endpoints not implemented in .NET backend yet (for example some admin/signing paths). When adding or removing endpoints, update both:
+Some frontend wrappers reference endpoints not implemented in .NET backend yet (currently mainly signing paths). When adding or removing endpoints, update both:
 
 1. backend controller routes
 2. `src/lib/api.ts` wrappers
@@ -297,7 +298,6 @@ These are not fully implemented in current .NET backend and should not be assume
 
 - OCR extraction and persistent per-document content indexing
 - Signature provider endpoints and workflow execution
-- Full admin analytics/audit endpoints expected by some UI wrappers
 - Full declarative workflow engine parity with original requirements
 
 When implementing any of the above, update this guide and add migration + test notes.

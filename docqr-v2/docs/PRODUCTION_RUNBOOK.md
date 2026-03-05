@@ -90,6 +90,12 @@ Functional check:
 
 - Register a unique user via `/api/v1/auth/register` with payload including `username`.
 - Expect `201` on valid payload.
+- Verify admin routes exist (unauthenticated should be `401`, not `404`):
+  - `/api/v1/admin/stats`
+  - `/api/v1/admin/audit-logs?page=1&limit=20`
+  - `/api/v1/admin/reports/sla`
+  - `/api/v1/admin/reports/workload`
+  - `/api/v1/admin/reports/turnaround`
 
 ## 5. Database Bootstrap / Repair
 
@@ -152,6 +158,21 @@ Action:
 
 1. Validate table structure against baseline + compatibility patch.
 2. Validate required seed rows.
+
+## 6.5 Admin endpoints return 404 in web console
+
+Cause:
+
+- API deployment is older than frontend contract (missing `AdminController` routes).
+
+Action:
+
+1. Deploy latest backend from `docqr-v2/apps/backend-dotnet/src/DocQR.Api`.
+2. Re-test:
+   - `GET /api/v1/admin/stats`
+   - `GET /api/v1/admin/audit-logs?page=1&limit=20`
+   - `GET /api/v1/admin/reports/sla`
+3. Unauthenticated expected result is `401`; authenticated admin expected result is `200`.
 
 ## 7. Operations Notes
 
