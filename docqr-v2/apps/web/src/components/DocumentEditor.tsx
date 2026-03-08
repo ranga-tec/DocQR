@@ -16,6 +16,34 @@ declare global {
   }
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return normalized === 'localhost'
+    || normalized === '127.0.0.1'
+    || normalized === '[::1]'
+    || normalized === '::1';
+}
+
+function buildOnlyOfficeLoadError(onlyOfficeUrl: string): string {
+  if (isRemotePageUsingLoopbackOnlyOffice(onlyOfficeUrl)) {
+    return 'OnlyOffice is configured to localhost, so this browser cannot reach it. Set OnlyOffice__ServerUrl to a public URL.';
+  }
+
+  return `Failed to load OnlyOffice editor script from ${onlyOfficeUrl}.`;
+}
+
+function isRemotePageUsingLoopbackOnlyOffice(onlyOfficeUrl: string): boolean {
+  try {
+    const url = new URL(onlyOfficeUrl);
+    const onlyOfficeHost = url.hostname;
+    const appHost = window.location.hostname;
+
+    return isLoopbackHost(onlyOfficeHost) && !isLoopbackHost(appHost);
+  } catch {
+    return false;
+  }
+}
+
 export default function DocumentEditor({
   attachmentId,
   fileName,
@@ -35,6 +63,13 @@ export default function DocumentEditor({
   // Load OnlyOffice script
   useEffect(() => {
     if (!configData?.data?.onlyOfficeUrl) return;
+    setScriptLoaded(false);
+    setError(null);
+
+    if (isRemotePageUsingLoopbackOnlyOffice(configData.data.onlyOfficeUrl)) {
+      setError(buildOnlyOfficeLoadError(configData.data.onlyOfficeUrl));
+      return;
+    }
 
     const existingScript = document.querySelector(`script[src="${configData.data.onlyOfficeUrl}"]`);
     if (existingScript) {
@@ -49,7 +84,7 @@ export default function DocumentEditor({
       setScriptLoaded(true);
     };
     script.onerror = () => {
-      setError('Failed to load OnlyOffice editor. Make sure OnlyOffice Document Server is running.');
+      setError(buildOnlyOfficeLoadError(configData.data.onlyOfficeUrl));
     };
     document.body.appendChild(script);
 
@@ -105,7 +140,7 @@ export default function DocumentEditor({
             {error || 'Failed to load document editor configuration.'}
           </p>
           <p className="text-sm text-muted-foreground mb-4">
-            Make sure OnlyOffice Document Server is running on port 8080.
+            Editing requires a reachable OnlyOffice server URL and matching JWT settings.
           </p>
           <Button onClick={onClose}>Close</Button>
         </div>

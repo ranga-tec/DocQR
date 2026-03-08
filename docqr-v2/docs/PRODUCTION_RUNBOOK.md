@@ -35,11 +35,15 @@ Optional/common:
 - `OnlyOffice__JwtEnabled`
 - `OnlyOffice__ServerUrl`
 - `OnlyOffice__JwtSecret`
+- `OnlyOffice__ExternalBackendUrl`
 
 Notes:
 
 - DB connection may be URL form (`postgresql://...`) or key-value form.
 - Backend startup now normalizes URL form automatically.
+- Read-only document viewing works without OnlyOffice (browser-native preview/download).
+- Document editing still requires a reachable public `OnlyOffice__ServerUrl`.
+- For containerized deployments, set `OnlyOffice__ExternalBackendUrl` to the public API URL so OnlyOffice callbacks and file fetches resolve correctly.
 
 ## 2.2 Web (`docqr-web`)
 
@@ -173,6 +177,19 @@ Action:
    - `GET /api/v1/admin/audit-logs?page=1&limit=20`
    - `GET /api/v1/admin/reports/sla`
 3. Unauthenticated expected result is `401`; authenticated admin expected result is `200`.
+
+## 6.6 Document view fails with `localhost:8080` in production
+
+Cause:
+
+- `OnlyOffice__ServerUrl` is pointing to localhost, which remote browsers cannot access.
+
+Action:
+
+1. For read-only access, use the normal View action (it now uses browser-native preview/download).
+2. For editing, configure a public OnlyOffice server and set:
+   - `OnlyOffice__ServerUrl=https://<public-onlyoffice-host>`
+   - `OnlyOffice__ExternalBackendUrl=https://docqr-api-production.up.railway.app`
 
 ## 7. Operations Notes
 
