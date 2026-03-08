@@ -36,17 +36,20 @@ public class DocketService : IDocketService
     private readonly AppDbContext _context;
     private readonly IStorageService _storageService;
     private readonly IQrCodeService _qrCodeService;
+    private readonly INotificationDeliveryService _notificationDeliveryService;
     private readonly ILogger<DocketService> _logger;
 
     public DocketService(
         AppDbContext context,
         IStorageService storageService,
         IQrCodeService qrCodeService,
+        INotificationDeliveryService notificationDeliveryService,
         ILogger<DocketService> logger)
     {
         _context = context;
         _storageService = storageService;
         _qrCodeService = qrCodeService;
+        _notificationDeliveryService = notificationDeliveryService;
         _logger = logger;
     }
 
@@ -215,6 +218,7 @@ public class DocketService : IDocketService
 
         _context.Dockets.Add(docket);
 
+        Notification? assignmentNotification = null;
         if (assignedToAnotherUser && !string.IsNullOrEmpty(assigneeId))
         {
             var initialAssignment = new DocketAssignment
@@ -232,7 +236,7 @@ public class DocketService : IDocketService
 
             _context.DocketAssignments.Add(initialAssignment);
 
-            _context.Notifications.Add(new Notification
+            assignmentNotification = new Notification
             {
                 Id = Guid.NewGuid().ToString(),
                 UserId = assigneeId,
@@ -243,10 +247,16 @@ public class DocketService : IDocketService
                 ActionUrl = $"/dockets/{docket.Id}",
                 Channels = "[\"in_app\"]",
                 CreatedAt = DateTime.UtcNow
-            });
+            };
+            _context.Notifications.Add(assignmentNotification);
         }
 
         await _context.SaveChangesAsync();
+
+        if (assignmentNotification != null)
+        {
+            await _notificationDeliveryService.DispatchAsync(assignmentNotification);
+        }
 
         // Reload with related data
         await _context.Entry(docket).Reference(d => d.DocketType).LoadAsync();
@@ -327,9 +337,10 @@ public class DocketService : IDocketService
 
         _context.DocketAssignments.Add(assignment);
 
+        Notification? forwardNotification = null;
         if (!string.IsNullOrEmpty(dto.ToUserId))
         {
-            _context.Notifications.Add(new Notification
+            forwardNotification = new Notification
             {
                 Id = Guid.NewGuid().ToString(),
                 UserId = dto.ToUserId,
@@ -340,7 +351,9 @@ public class DocketService : IDocketService
                 ActionUrl = $"/dockets/{docket.Id}",
                 Channels = "[\"in_app\"]",
                 CreatedAt = DateTime.UtcNow
-            });
+            };
+
+            _context.Notifications.Add(forwardNotification);
         }
 
         // Update docket
@@ -350,6 +363,11 @@ public class DocketService : IDocketService
         docket.UpdatedBy = userId;
 
         await _context.SaveChangesAsync();
+
+        if (forwardNotification != null)
+        {
+            await _notificationDeliveryService.DispatchAsync(forwardNotification);
+        }
 
         await _context.Entry(docket).Reference(d => d.DocketType).LoadAsync();
         await _context.Entry(docket).Reference(d => d.Creator).LoadAsync();

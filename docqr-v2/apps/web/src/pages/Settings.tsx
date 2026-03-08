@@ -3,6 +3,15 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { authApi, notificationsApi } from '../lib/api';
+import {
+  DEFAULT_APPEARANCE,
+  applyAppearancePreferences,
+  loadAppearancePreferences,
+  saveAppearancePreferences,
+  type AppearancePreferences,
+  type FontSizePreference,
+  type ThemePreference,
+} from '../lib/appearance';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -43,10 +52,16 @@ export default function Settings() {
     deliveryMode: 'immediate' as 'immediate' | 'digest',
     digestFrequency: 'daily' as 'daily' | 'weekly',
   });
+  const [appearance, setAppearance] = useState<AppearancePreferences>(DEFAULT_APPEARANCE);
 
   const { data: preferencesData } = useQuery({
     queryKey: ['notification-preferences'],
     queryFn: () => notificationsApi.getPreferences(),
+  });
+
+  const { data: capabilitiesData } = useQuery({
+    queryKey: ['notification-capabilities'],
+    queryFn: () => notificationsApi.getCapabilities(),
   });
 
   useEffect(() => {
@@ -59,12 +74,32 @@ export default function Settings() {
   }, [user]);
 
   useEffect(() => {
-    if (!preferencesData?.data) return;
-    setPreferences((prev) => ({
-      ...prev,
-      ...preferencesData.data,
-    }));
+    const raw = preferencesData?.data?.data ?? preferencesData?.data;
+    if (!raw || typeof raw !== 'object') return;
+    const payload = raw as Partial<typeof preferences>;
+    setPreferences((prev) => ({ ...prev, ...payload }));
   }, [preferencesData]);
+
+  useEffect(() => {
+    const saved = loadAppearancePreferences();
+    setAppearance(saved);
+    applyAppearancePreferences(saved);
+  }, []);
+
+  useEffect(() => {
+    if (appearance.theme !== 'system') return;
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const listener = () => applyAppearancePreferences(appearance);
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', listener);
+      return () => media.removeEventListener('change', listener);
+    }
+
+    media.addListener(listener);
+    return () => media.removeListener(listener);
+  }, [appearance]);
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
@@ -81,14 +116,31 @@ export default function Settings() {
   };
 
   const savePreferencesMutation = useMutation({
-    mutationFn: () => notificationsApi.updatePreferences(preferences),
+    mutationFn: () => notificationsApi.updatePreferences({
+      ...preferences,
+      emailEnabled: emailConfigured ? preferences.emailEnabled : false,
+      smsEnabled: smsConfigured && !!capabilities.phoneNumber ? preferences.smsEnabled : false,
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-preferences'] });
+      alert('Notification preferences saved.');
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.message || 'Failed to save notification preferences.';
+      alert(Array.isArray(message) ? message.join(', ') : String(message));
     },
   });
 
   const sendDigestMutation = useMutation({
     mutationFn: () => notificationsApi.sendDigest(),
+    onSuccess: (response: any) => {
+      const message = response?.data?.message || 'Digest request submitted.';
+      alert(String(message));
+    },
+    onError: (error: any) => {
+      const message = error?.response?.data?.message || 'Failed to send digest.';
+      alert(Array.isArray(message) ? message.join(', ') : String(message));
+    },
   });
 
   const updateProfileMutation = useMutation({
@@ -125,6 +177,32 @@ export default function Settings() {
     { id: 'security', label: 'Security', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
     { id: 'appearance', label: 'Appearance', icon: 'M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01' },
   ];
+
+  const capabilitiesRaw = capabilitiesData?.data?.data ?? capabilitiesData?.data;
+  const capabilities = (capabilitiesRaw && typeof capabilitiesRaw === 'object'
+    ? capabilitiesRaw
+    : {}) as {
+      emailConfigured?: boolean;
+      smsConfigured?: boolean;
+      emailAddress?: string | null;
+      phoneNumber?: string | null;
+    };
+
+  const emailConfigured = capabilities.emailConfigured === true;
+  const smsConfigured = capabilities.smsConfigured === true;
+
+  const updateAppearancePreview = (partial: Partial<AppearancePreferences>) => {
+    setAppearance((prev) => {
+      const next = { ...prev, ...partial };
+      applyAppearancePreferences(next);
+      return next;
+    });
+  };
+
+  const saveAppearance = () => {
+    saveAppearancePreferences(appearance);
+    alert('Appearance preferences saved.');
+  };
 
   return (
     <div className="space-y-6">
@@ -233,20 +311,27 @@ export default function Settings() {
             <Card>
               <CardHeader>
                 <CardTitle>Notification Preferences</CardTitle>
-                <CardDescription>Choose how you want to receive notifications</CardDescription>
+                <CardDescription>
+                  In-app notifications (bell and inbox) are active in this deployment. Email/SMS require provider setup by administrator.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-4 rounded-lg border">
                     <div>
                       <p className="font-medium">Email Notifications</p>
-                      <p className="text-sm text-muted-foreground">Receive notifications via email</p>
+                      <p className="text-sm text-muted-foreground">
+                        {emailConfigured
+                          ? `Delivered to ${capabilities.emailAddress || user?.email || 'your profile email'}`
+                          : 'Not configured on server (requires SendGrid credentials).'}
+                      </p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
                         checked={preferences.emailEnabled}
                         onChange={(e) => setPreferences((prev) => ({ ...prev, emailEnabled: e.target.checked }))}
+                        disabled={!emailConfigured}
                         className="sr-only peer"
                       />
                       <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:bg-primary peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
@@ -256,13 +341,20 @@ export default function Settings() {
                   <div className="flex items-center justify-between p-4 rounded-lg border">
                     <div>
                       <p className="font-medium">SMS Notifications</p>
-                      <p className="text-sm text-muted-foreground">Receive notifications via SMS</p>
+                      <p className="text-sm text-muted-foreground">
+                        {smsConfigured
+                          ? (capabilities.phoneNumber
+                            ? `Delivered to ${capabilities.phoneNumber}`
+                            : 'Set your phone number in Profile to enable SMS.')
+                          : 'Not configured on server (requires Twilio credentials).'}
+                      </p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input
                         type="checkbox"
                         checked={preferences.smsEnabled}
                         onChange={(e) => setPreferences((prev) => ({ ...prev, smsEnabled: e.target.checked }))}
+                        disabled={!smsConfigured || !capabilities.phoneNumber}
                         className="sr-only peer"
                       />
                       <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:bg-primary peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
@@ -370,7 +462,7 @@ export default function Settings() {
                     type="button"
                     variant="outline"
                     onClick={() => sendDigestMutation.mutate()}
-                    disabled={sendDigestMutation.isPending}
+                    disabled={sendDigestMutation.isPending || !emailConfigured}
                   >
                     {sendDigestMutation.isPending ? 'Sending...' : 'Send Test Digest'}
                   </Button>
@@ -472,18 +564,23 @@ export default function Settings() {
                 <div>
                   <Label className="mb-4 block">Theme</Label>
                   <div className="grid grid-cols-3 gap-4">
-                    <button className="p-4 rounded-lg border-2 border-primary bg-white text-center">
-                      <div className="w-full aspect-video rounded bg-white border mb-2"></div>
-                      <span className="text-sm font-medium">Light</span>
-                    </button>
-                    <button className="p-4 rounded-lg border-2 border-transparent hover:border-muted bg-background text-center">
-                      <div className="w-full aspect-video rounded bg-gray-900 mb-2"></div>
-                      <span className="text-sm font-medium">Dark</span>
-                    </button>
-                    <button className="p-4 rounded-lg border-2 border-transparent hover:border-muted bg-background text-center">
-                      <div className="w-full aspect-video rounded bg-gradient-to-br from-white to-gray-900 mb-2"></div>
-                      <span className="text-sm font-medium">System</span>
-                    </button>
+                    {([
+                      { id: 'light', label: 'Light', previewClass: 'bg-white border' },
+                      { id: 'dark', label: 'Dark', previewClass: 'bg-gray-900' },
+                      { id: 'system', label: 'System', previewClass: 'bg-gradient-to-br from-white to-gray-900' },
+                    ] as { id: ThemePreference; label: string; previewClass: string }[]).map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => updateAppearancePreview({ theme: option.id })}
+                        className={`p-4 rounded-lg border-2 text-center ${
+                          appearance.theme === option.id ? 'border-primary' : 'border-transparent hover:border-muted'
+                        }`}
+                      >
+                        <div className={`w-full aspect-video rounded mb-2 ${option.previewClass}`}></div>
+                        <span className="text-sm font-medium">{option.label}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -493,8 +590,10 @@ export default function Settings() {
                     {['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'].map((color) => (
                       <button
                         key={color}
+                        type="button"
+                        onClick={() => updateAppearancePreview({ accentColor: color })}
                         className={`w-10 h-10 rounded-full border-2 ${
-                          color === '#4F46E5' ? 'border-gray-900' : 'border-transparent'
+                          appearance.accentColor === color ? 'border-gray-900' : 'border-transparent'
                         }`}
                         style={{ backgroundColor: color }}
                       />
@@ -505,13 +604,26 @@ export default function Settings() {
                 <div>
                   <Label className="mb-4 block">Font Size</Label>
                   <div className="flex gap-4">
-                    <button className="px-4 py-2 rounded-lg border hover:border-primary text-sm">Small</button>
-                    <button className="px-4 py-2 rounded-lg border-2 border-primary">Default</button>
-                    <button className="px-4 py-2 rounded-lg border hover:border-primary text-lg">Large</button>
+                    {([
+                      { id: 'small', label: 'Small', className: 'text-sm' },
+                      { id: 'default', label: 'Default', className: '' },
+                      { id: 'large', label: 'Large', className: 'text-lg' },
+                    ] as { id: FontSizePreference; label: string; className: string }[]).map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => updateAppearancePreview({ fontSize: option.id })}
+                        className={`px-4 py-2 rounded-lg border ${
+                          appearance.fontSize === option.id ? 'border-2 border-primary' : 'hover:border-primary'
+                        } ${option.className}`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                <Button>Save Preferences</Button>
+                <Button type="button" onClick={saveAppearance}>Save Preferences</Button>
               </CardContent>
             </Card>
           )}

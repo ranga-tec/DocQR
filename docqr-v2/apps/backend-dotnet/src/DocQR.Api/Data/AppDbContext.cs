@@ -22,6 +22,7 @@ public class AppDbContext : DbContext
     public DbSet<DocketComment> DocketComments => Set<DocketComment>();
     public DbSet<DocketAssignment> DocketAssignments => Set<DocketAssignment>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<UserNotificationPreference> UserNotificationPreferences => Set<UserNotificationPreference>();
     public DbSet<Register> Registers => Set<Register>();
     public DbSet<RegisterEntry> RegisterEntries => Set<RegisterEntry>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -212,6 +213,17 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(n => n.UserId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // UserNotificationPreference
+        modelBuilder.Entity<UserNotificationPreference>()
+            .HasOne(p => p.User)
+            .WithOne()
+            .HasForeignKey<UserNotificationPreference>(p => p.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<UserNotificationPreference>()
+            .HasIndex(p => p.UserId)
+            .IsUnique();
 
         // AuditLog
         modelBuilder.Entity<AuditLog>()

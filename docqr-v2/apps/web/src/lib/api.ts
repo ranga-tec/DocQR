@@ -371,9 +371,31 @@ export const notificationsApi = {
 
   markAllAsRead: () => api.post('/notifications/mark-all-read'),
 
-  getPreferences: () => api.get('/notifications/preferences'),
+  getPreferences: async () => {
+    try {
+      return await api.get('/notifications/preferences');
+    } catch (error) {
+      const status = (error as AxiosError).response?.status;
+      if (status === 404) {
+        return {
+          data: {
+            emailEnabled: false,
+            smsEnabled: false,
+            inAppEnabled: true,
+            quietHoursEnabled: false,
+            quietHoursStart: '22:00',
+            quietHoursEnd: '07:00',
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+            deliveryMode: 'immediate',
+            digestFrequency: 'daily',
+          },
+        };
+      }
+      throw error;
+    }
+  },
 
-  updatePreferences: (data: {
+  updatePreferences: async (data: {
     emailEnabled?: boolean;
     smsEnabled?: boolean;
     inAppEnabled?: boolean;
@@ -383,9 +405,41 @@ export const notificationsApi = {
     timeZone?: string;
     deliveryMode?: 'immediate' | 'digest';
     digestFrequency?: 'daily' | 'weekly';
-  }) => api.put('/notifications/preferences', data),
+  }) => {
+    try {
+      return await api.put('/notifications/preferences', data);
+    } catch (error) {
+      const status = (error as AxiosError).response?.status;
+      if (status === 404) {
+        return { data };
+      }
+      throw error;
+    }
+  },
 
-  sendDigest: () => api.post('/notifications/digest/send'),
+  sendDigest: async () => {
+    try {
+      return await api.post('/notifications/digest/send');
+    } catch (error) {
+      const status = (error as AxiosError).response?.status;
+      if (status === 404) {
+        return { data: { success: false, message: 'Digest service is not available in this deployment.' } };
+      }
+      throw error;
+    }
+  },
+
+  getCapabilities: async () => {
+    try {
+      return await api.get('/notifications/capabilities');
+    } catch (error) {
+      const status = (error as AxiosError).response?.status;
+      if (status === 404) {
+        return { data: { emailConfigured: false, smsConfigured: false, emailAddress: null, phoneNumber: null } };
+      }
+      throw error;
+    }
+  },
 };
 
 // OnlyOffice API

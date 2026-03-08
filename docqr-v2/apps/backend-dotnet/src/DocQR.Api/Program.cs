@@ -49,10 +49,12 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 // Services
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IStorageService, StorageService>();
 builder.Services.AddScoped<IQrCodeService, QrCodeService>();
 builder.Services.AddScoped<IDocketService, DocketService>();
+builder.Services.AddScoped<INotificationDeliveryService, NotificationDeliveryService>();
 
 // Controllers
 builder.Services.AddControllers();
