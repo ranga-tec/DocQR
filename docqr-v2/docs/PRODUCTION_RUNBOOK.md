@@ -8,6 +8,7 @@ Current Railway project (production environment) should contain:
 
 - `docqr-api`
 - `docqr-web`
+- `onlyoffice-nginx`
 - `Postgres`
 - `Redis`
 
@@ -15,6 +16,7 @@ Public domains:
 
 - API: `https://docqr-api-production.up.railway.app`
 - Web: `https://docqr-web-production.up.railway.app`
+- OnlyOffice: `https://onlyoffice-nginx-production.up.railway.app`
 
 ## 2. Required Environment Variables
 
@@ -44,6 +46,7 @@ Notes:
 - Read-only document viewing works without OnlyOffice (browser-native preview/download).
 - Document editing still requires a reachable public `OnlyOffice__ServerUrl`.
 - For containerized deployments, set `OnlyOffice__ExternalBackendUrl` to the public API URL so OnlyOffice callbacks and file fetches resolve correctly.
+- Current production points to `https://onlyoffice-nginx-production.up.railway.app`.
 
 ## 2.2 Web (`docqr-web`)
 
@@ -191,7 +194,33 @@ Action:
    - `OnlyOffice__ServerUrl=https://<public-onlyoffice-host>`
    - `OnlyOffice__ExternalBackendUrl=https://docqr-api-production.up.railway.app`
 
+## 6.7 OnlyOffice on Railway (Hobby) - Known Good Setup
+
+Use this exact pattern for Railway:
+
+1. Create a dedicated service from `onlyoffice/documentserver:7.5.1` (or a tested pinned tag).
+2. Create a Railway domain for that service.
+3. Ensure the service domain target port is `8000`.
+4. Configure shared JWT secret values in both services:
+   - OnlyOffice service: `JWT_ENABLED=true`, `JWT_SECRET=<shared>`, `JWT_HEADER=Authorization`, `JWT_IN_BODY=true`
+   - API service: `OnlyOffice__JwtEnabled=true`, `OnlyOffice__JwtSecret=<shared>`
+5. Set API endpoint URLs:
+   - `OnlyOffice__ServerUrl=https://onlyoffice-nginx-production.up.railway.app`
+   - `OnlyOffice__ExternalBackendUrl=https://docqr-api-production.up.railway.app`
+
+Validation checks:
+
+- `GET https://onlyoffice-nginx-production.up.railway.app/healthcheck` -> `200` body `true`
+- `GET https://onlyoffice-nginx-production.up.railway.app/web-apps/apps/api/documents/api.js` -> `200`
+- `GET https://docqr-api-production.up.railway.app/health` -> `200`
+
+If `targetPort` is null or wrong:
+
+- Symptom: OnlyOffice domain returns `502 Bad Gateway` while deployment shows `SUCCESS`.
+- Fix: update the service domain target port to `8000` (via Railway dashboard or Railway GraphQL `serviceDomainUpdate` mutation).
+
 ## 7. Operations Notes
 
 - Railway logs can be queried via CLI or GraphQL API.
+- If CLI `railway logs` hangs/timeouts, use GraphQL `deploymentLogs` / `buildLogs` queries against `https://backboard.railway.app/graphql/v2`.
 - Keep this runbook updated with every production incident fix and new env vars.
