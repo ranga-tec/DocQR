@@ -7,6 +7,7 @@ import { Input } from '../../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { getStatusColor, getPriorityColor, formatRelativeTime } from '../../lib/utils';
 import { extractDocketList } from '../../lib/docket';
+import { useAuth } from '../../context/AuthContext';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All Statuses' },
@@ -20,8 +21,10 @@ const STATUS_OPTIONS = [
 ];
 
 export default function DocketsList() {
+  const { hasPermission } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState(searchParams.get('search') || '');
+  const canCreateDocket = hasPermission('docket:create');
 
   const status = searchParams.get('status') || '';
   const page = parseInt(searchParams.get('page') || '1');
@@ -69,14 +72,16 @@ export default function DocketsList() {
             Manage and track all document dockets
           </p>
         </div>
-        <Link to="/dockets/new">
-          <Button>
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Docket
-          </Button>
-        </Link>
+        {canCreateDocket ? (
+          <Link to="/dockets/new">
+            <Button>
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Docket
+            </Button>
+          </Link>
+        ) : null}
       </div>
 
       {/* Filters */}
@@ -231,7 +236,7 @@ export default function DocketsList() {
                   ? 'Try adjusting your filters'
                   : 'Get started by creating your first docket'}
               </p>
-              {!search && !status && (
+              {!search && !status && canCreateDocket && (
                 <Link to="/dockets/new">
                   <Button>Create Docket</Button>
                 </Link>

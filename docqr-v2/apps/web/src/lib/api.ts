@@ -289,6 +289,7 @@ export const usersApi = {
 
   update: (id: string, data: {
     email?: string;
+    password?: string;
     firstName?: string;
     lastName?: string;
     phone?: string;
@@ -296,7 +297,7 @@ export const usersApi = {
     isActive?: boolean;
     roleIds?: string[];
     departmentIds?: string[];
-  }) => api.put(`/users/${id}`, data),
+  }) => api.patch(`/users/${id}`, data),
 
   delete: (id: string) =>
     api.delete(`/users/${id}`),

@@ -7,13 +7,22 @@ namespace DocQR.Api.Services;
 
 public interface IDocketService
 {
-    Task<DocketListResponseDto> GetDocketsAsync(string userId, int page = 1, int pageSize = 20, string? status = null, string? search = null);
-    Task<DocketResponseDto?> GetDocketByIdAsync(string id, string userId);
+    Task<DocketListResponseDto> GetDocketsAsync(
+        string userId,
+        int page = 1,
+        int pageSize = 20,
+        string? status = null,
+        string? search = null,
+        bool assignedToMe = false,
+        bool includeAll = false);
+    Task<DocketResponseDto?> GetDocketByIdAsync(string id, string userId, bool includeAll = false);
     Task<DocketResponseDto?> GetDocketByQrTokenAsync(string qrToken);
     Task<DocketResponseDto> CreateDocketAsync(CreateDocketDto dto, string userId);
     Task<DocketResponseDto?> UpdateDocketAsync(string id, UpdateDocketDto dto, string userId);
     Task<bool> DeleteDocketAsync(string id, string userId);
     Task<DocketResponseDto?> ForwardDocketAsync(string id, ForwardDocketDto dto, string userId);
+    Task<DocketResponseDto?> AcceptDocketAsync(string id, string userId, string? notes = null);
+    Task<DocketResponseDto?> CloseDocketAsync(string id, string userId);
     Task<string> GenerateQrTokenAsync(string docketId, int expirationHours = 24);
     Task<List<AttachmentDto>> GetAttachmentsAsync(string docketId);
     Task<AttachmentDto> AddAttachmentAsync(string docketId, byte[] fileData, string fileName, string mimeType, string userId);
@@ -41,7 +50,14 @@ public class DocketService : IDocketService
         _logger = logger;
     }
 
-    public async Task<DocketListResponseDto> GetDocketsAsync(string userId, int page = 1, int pageSize = 20, string? status = null, string? search = null)
+    public async Task<DocketListResponseDto> GetDocketsAsync(
+        string userId,
+        int page = 1,
+        int pageSize = 20,
+        string? status = null,
+        string? search = null,
+        bool assignedToMe = false,
+        bool includeAll = false)
     {
         var query = _context.Dockets
             .Include(d => d.DocketType)
@@ -49,10 +65,26 @@ public class DocketService : IDocketService
             .Include(d => d.CurrentAssignee)
             .Where(d => d.DeletedAt == null);
 
+        // Restrict visibility unless explicitly elevated.
+        if (assignedToMe)
+        {
+            query = query.Where(d =>
+                d.CurrentAssigneeId == userId ||
+                d.Assignments.Any(a => a.AssignedTo == userId));
+        }
+        else if (!includeAll)
+        {
+            query = query.Where(d =>
+                d.CreatedBy == userId ||
+                d.CurrentAssigneeId == userId ||
+                d.Assignments.Any(a => a.AssignedTo == userId));
+        }
+
         // Filter by status
         if (!string.IsNullOrEmpty(status))
         {
-            query = query.Where(d => d.Status == status);
+            var normalizedStatus = status.Trim().ToLowerInvariant();
+            query = query.Where(d => d.Status.ToLower() == normalizedStatus);
         }
 
         // Search by subject or docket number
@@ -83,13 +115,23 @@ public class DocketService : IDocketService
         };
     }
 
-    public async Task<DocketResponseDto?> GetDocketByIdAsync(string id, string userId)
+    public async Task<DocketResponseDto?> GetDocketByIdAsync(string id, string userId, bool includeAll = false)
     {
-        var docket = await _context.Dockets
+        var query = _context.Dockets
             .Include(d => d.DocketType)
             .Include(d => d.Creator)
             .Include(d => d.CurrentAssignee)
-            .FirstOrDefaultAsync(d => d.Id == id && d.DeletedAt == null);
+            .Where(d => d.Id == id && d.DeletedAt == null);
+
+        if (!includeAll)
+        {
+            query = query.Where(d =>
+                d.CreatedBy == userId ||
+                d.CurrentAssigneeId == userId ||
+                d.Assignments.Any(a => a.AssignedTo == userId));
+        }
+
+        var docket = await query.FirstOrDefaultAsync();
 
         return docket != null ? MapToDto(docket) : null;
     }
@@ -141,6 +183,7 @@ public class DocketService : IDocketService
 
         // Determine assignee
         var assigneeId = !string.IsNullOrEmpty(dto.AssignToUserId) ? dto.AssignToUserId : userId;
+        var assignedToAnotherUser = !string.IsNullOrEmpty(dto.AssignToUserId) && dto.AssignToUserId != userId;
 
         var docket = new Docket
         {
@@ -149,7 +192,7 @@ public class DocketService : IDocketService
             Subject = dto.Subject,
             Description = dto.Description,
             DocketTypeId = docketType?.Id,
-            Status = "open",
+            Status = assignedToAnotherUser ? "forwarded" : "open",
             Priority = dto.Priority ?? "normal",
             DueDate = dto.DueDate,
             // Sender information
@@ -171,6 +214,38 @@ public class DocketService : IDocketService
         };
 
         _context.Dockets.Add(docket);
+
+        if (assignedToAnotherUser && !string.IsNullOrEmpty(assigneeId))
+        {
+            var initialAssignment = new DocketAssignment
+            {
+                Id = Guid.NewGuid().ToString(),
+                DocketId = docket.Id,
+                AssignedFrom = userId,
+                AssignedTo = assigneeId,
+                AssignmentType = "forward",
+                Instructions = "Initial assignment",
+                SequenceNumber = 1,
+                Status = "pending",
+                AssignedAt = DateTime.UtcNow
+            };
+
+            _context.DocketAssignments.Add(initialAssignment);
+
+            _context.Notifications.Add(new Notification
+            {
+                Id = Guid.NewGuid().ToString(),
+                UserId = assigneeId,
+                Title = $"New docket assigned: {docket.DocketNumber}",
+                Message = $"Docket \"{docket.Subject}\" has been assigned to you.",
+                ResourceType = "docket",
+                ResourceId = docket.Id,
+                ActionUrl = $"/dockets/{docket.Id}",
+                Channels = "[\"in_app\"]",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
         await _context.SaveChangesAsync();
 
         // Reload with related data
@@ -252,6 +327,22 @@ public class DocketService : IDocketService
 
         _context.DocketAssignments.Add(assignment);
 
+        if (!string.IsNullOrEmpty(dto.ToUserId))
+        {
+            _context.Notifications.Add(new Notification
+            {
+                Id = Guid.NewGuid().ToString(),
+                UserId = dto.ToUserId,
+                Title = $"Docket forwarded: {docket.DocketNumber}",
+                Message = $"Docket \"{docket.Subject}\" has been forwarded to you.",
+                ResourceType = "docket",
+                ResourceId = docket.Id,
+                ActionUrl = $"/dockets/{docket.Id}",
+                Channels = "[\"in_app\"]",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
         // Update docket
         docket.CurrentAssigneeId = dto.ToUserId;
         docket.Status = "forwarded";
@@ -259,6 +350,85 @@ public class DocketService : IDocketService
         docket.UpdatedBy = userId;
 
         await _context.SaveChangesAsync();
+
+        await _context.Entry(docket).Reference(d => d.DocketType).LoadAsync();
+        await _context.Entry(docket).Reference(d => d.Creator).LoadAsync();
+        await _context.Entry(docket).Reference(d => d.CurrentAssignee).LoadAsync();
+
+        return MapToDto(docket);
+    }
+
+    public async Task<DocketResponseDto?> AcceptDocketAsync(string id, string userId, string? notes = null)
+    {
+        var docket = await _context.Dockets
+            .FirstOrDefaultAsync(d => d.Id == id && d.DeletedAt == null);
+
+        if (docket == null) return null;
+
+        var hasAccess = docket.CreatedBy == userId ||
+                        docket.CurrentAssigneeId == userId ||
+                        await _context.DocketAssignments.AnyAsync(a => a.DocketId == id && a.AssignedTo == userId);
+
+        if (!hasAccess) return null;
+
+        // Mark the latest pending assignment for this user as accepted.
+        var assignment = await _context.DocketAssignments
+            .Where(a => a.DocketId == id && a.AssignedTo == userId && a.Status == "pending")
+            .OrderByDescending(a => a.AssignedAt)
+            .FirstOrDefaultAsync();
+
+        if (assignment != null)
+        {
+            assignment.Status = "accepted";
+            assignment.AcceptedAt = DateTime.UtcNow;
+            assignment.Action = "accept";
+            if (!string.IsNullOrWhiteSpace(notes))
+            {
+                assignment.Comments = notes;
+            }
+        }
+
+        docket.Status = "in_review";
+        docket.UpdatedAt = DateTime.UtcNow;
+        docket.UpdatedBy = userId;
+
+        await _context.SaveChangesAsync();
+
+        await _context.Entry(docket).Reference(d => d.DocketType).LoadAsync();
+        await _context.Entry(docket).Reference(d => d.Creator).LoadAsync();
+        await _context.Entry(docket).Reference(d => d.CurrentAssignee).LoadAsync();
+
+        return MapToDto(docket);
+    }
+
+    public async Task<DocketResponseDto?> CloseDocketAsync(string id, string userId)
+    {
+        var docket = await _context.Dockets
+            .FirstOrDefaultAsync(d => d.Id == id && d.DeletedAt == null);
+
+        if (docket == null) return null;
+
+        if (!string.Equals(docket.Status, "closed", StringComparison.OrdinalIgnoreCase))
+        {
+            docket.Status = "closed";
+            docket.ClosedAt = DateTime.UtcNow;
+            docket.ClosedBy = userId;
+            docket.UpdatedAt = DateTime.UtcNow;
+            docket.UpdatedBy = userId;
+
+            var activeAssignments = await _context.DocketAssignments
+                .Where(a => a.DocketId == id && a.Status == "pending")
+                .ToListAsync();
+
+            foreach (var assignment in activeAssignments)
+            {
+                assignment.Status = "completed";
+                assignment.CompletedAt = DateTime.UtcNow;
+                assignment.Action = "close";
+            }
+
+            await _context.SaveChangesAsync();
+        }
 
         await _context.Entry(docket).Reference(d => d.DocketType).LoadAsync();
         await _context.Entry(docket).Reference(d => d.Creator).LoadAsync();

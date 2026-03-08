@@ -10,6 +10,7 @@ import { normalizeDocket } from '../../lib/docket';
 import ForwardModal from '../../components/ForwardModal';
 import ReturnModal from '../../components/ReturnModal';
 import RejectModal from '../../components/RejectModal';
+import { useAuth } from '../../context/AuthContext';
 
 // File extensions supported by OnlyOffice for editing
 const EDITABLE_EXTENSIONS = ['doc', 'docx', 'odt', 'rtf', 'txt', 'xls', 'xlsx', 'ods', 'csv', 'ppt', 'pptx', 'odp'];
@@ -40,6 +41,7 @@ export default function DocketDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { hasPermission } = useAuth();
   const [showQr, setShowQr] = useState(false);
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [newComment, setNewComment] = useState('');
@@ -52,6 +54,9 @@ export default function DocketDetail() {
   const [isInternalComment, setIsInternalComment] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
+  const canEditAttachment = hasPermission('attachment:edit');
+  const canForwardDocket = hasPermission('docket:forward');
+  const canCommentDocket = hasPermission('docket:comment');
 
   const { data: docket, isLoading } = useQuery({
     queryKey: ['docket', id],
@@ -326,16 +331,18 @@ export default function DocketDetail() {
           </button>
         </div>
       ) : null}
-      <div className="mt-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => setReplyToCommentId(comment.id)}
-        >
-          Reply
-        </Button>
-      </div>
+      {canCommentDocket ? (
+        <div className="mt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setReplyToCommentId(comment.id)}
+          >
+            Reply
+          </Button>
+        </div>
+      ) : null}
       {(comment.replies?.length ?? 0) > 0 ? (
         <ul className={`space-y-3 mt-3 ${depth >= 0 ? 'pl-5 border-l' : ''}`}>
           {comment.replies!.map((reply) => renderCommentNode(reply, depth + 1))}
@@ -594,7 +601,7 @@ export default function DocketDetail() {
                           </Link>
                         )}
                         {/* Edit button - for editable documents */}
-                        {isFileEditable(att.originalFileName || att.fileName) && (
+                        {canEditAttachment && isFileEditable(att.originalFileName || att.fileName) && (
                           <Link
                             to={`/document/${att.id}?mode=edit&name=${encodeURIComponent(att.originalFileName || att.fileName)}`}
                           >
@@ -664,6 +671,7 @@ export default function DocketDetail() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
+                  if (!canCommentDocket) return;
                   if (newComment.trim() || commentFile) {
                     addCommentMutation.mutate({
                       content: newComment.trim(),
@@ -675,74 +683,82 @@ export default function DocketDetail() {
                 }}
                 className="space-y-2"
               >
-                {replyToCommentId ? (
-                  <div className="text-xs text-muted-foreground">
-                    Replying to comment
-                    <button
-                      type="button"
-                      className="ml-2 text-primary hover:underline"
-                      onClick={() => setReplyToCommentId(null)}
-                    >
-                      Cancel reply
-                    </button>
-                  </div>
-                ) : null}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    placeholder="Add a comment... Use @username to mention"
-                    className="flex-1 px-3 py-2 border rounded-md bg-background text-sm"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => commentFileInputRef.current?.click()}
-                  >
-                    Attach
-                  </Button>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={(!newComment.trim() && !commentFile) || addCommentMutation.isPending}
-                  >
-                    {addCommentMutation.isPending ? 'Posting...' : 'Post'}
-                  </Button>
-                </div>
-                <input
-                  type="file"
-                  ref={commentFileInputRef}
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] || null;
-                    setCommentFile(file);
-                    e.target.value = '';
-                  }}
-                />
-                <div className="flex items-center justify-between">
-                  <label className="text-xs text-muted-foreground flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={isInternalComment}
-                      onChange={(e) => setIsInternalComment(e.target.checked)}
-                    />
-                    Internal comment
-                  </label>
-                  {commentFile ? (
-                    <span className="text-xs text-muted-foreground">
-                      Attached: {commentFile.name}
-                      <button
+                {canCommentDocket ? (
+                  <>
+                    {replyToCommentId ? (
+                      <div className="text-xs text-muted-foreground">
+                        Replying to comment
+                        <button
+                          type="button"
+                          className="ml-2 text-primary hover:underline"
+                          onClick={() => setReplyToCommentId(null)}
+                        >
+                          Cancel reply
+                        </button>
+                      </div>
+                    ) : null}
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="Add a comment... Use @username to mention"
+                        className="flex-1 px-3 py-2 border rounded-md bg-background text-sm"
+                      />
+                      <Button
                         type="button"
-                        className="ml-2 text-primary hover:underline"
-                        onClick={() => setCommentFile(null)}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => commentFileInputRef.current?.click()}
                       >
-                        remove
-                      </button>
-                    </span>
-                  ) : null}
-                </div>
+                        Attach
+                      </Button>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        disabled={(!newComment.trim() && !commentFile) || addCommentMutation.isPending}
+                      >
+                        {addCommentMutation.isPending ? 'Posting...' : 'Post'}
+                      </Button>
+                    </div>
+                    <input
+                      type="file"
+                      ref={commentFileInputRef}
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        setCommentFile(file);
+                        e.target.value = '';
+                      }}
+                    />
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-muted-foreground flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isInternalComment}
+                          onChange={(e) => setIsInternalComment(e.target.checked)}
+                        />
+                        Internal comment
+                      </label>
+                      {commentFile ? (
+                        <span className="text-xs text-muted-foreground">
+                          Attached: {commentFile.name}
+                          <button
+                            type="button"
+                            className="ml-2 text-primary hover:underline"
+                            onClick={() => setCommentFile(null)}
+                          >
+                            remove
+                          </button>
+                        </span>
+                      ) : null}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    You have view-only access. Commenting is restricted for your role.
+                  </p>
+                )}
               </form>
 
               {/* Comments List */}
@@ -767,7 +783,7 @@ export default function DocketDetail() {
               <CardTitle>Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {actions.includes('forward') && (
+              {canForwardDocket && actions.includes('forward') && (
                 <Button
                   variant="outline"
                   className="w-full justify-start"

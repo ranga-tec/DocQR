@@ -10,7 +10,7 @@ import { extractDocketList } from '../lib/docket';
 type FilterTab = 'pending' | 'action_required' | 'forwarded' | 'all';
 
 export default function Inbox() {
-  const [activeTab, setActiveTab] = useState<FilterTab>('pending');
+  const [activeTab, setActiveTab] = useState<FilterTab>('all');
 
   // Fetch dockets assigned to current user
   const { data, isLoading } = useQuery({

@@ -34,11 +34,25 @@ public class DocketsController : ControllerBase
         [FromQuery] int? limit = null,  // Alias for pageSize
         [FromQuery] string? status = null,
         [FromQuery] string? search = null,
+        [FromQuery] bool assignedToMe = false,
         [FromQuery] string? sort = null)
     {
+        var forbidden = EnsurePermission("docket:view");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var userId = GetCurrentUserId();
         var effectivePageSize = limit ?? pageSize;
-        var result = await _docketService.GetDocketsAsync(userId, page, effectivePageSize, status, search);
+        var result = await _docketService.GetDocketsAsync(
+            userId,
+            page,
+            effectivePageSize,
+            status,
+            search,
+            assignedToMe,
+            IsElevatedUser());
         // Wrap in data property with nested data array for frontend compatibility
         return Ok(new
         {
@@ -59,8 +73,14 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<DocketResponseDto>> GetDocket(string id)
     {
+        var forbidden = EnsurePermission("docket:view");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var userId = GetCurrentUserId();
-        var docket = await _docketService.GetDocketByIdAsync(id, userId);
+        var docket = await _docketService.GetDocketByIdAsync(id, userId, IsElevatedUser());
 
         if (docket == null)
         {
@@ -92,6 +112,12 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<DocketResponseDto>> CreateDocket([FromBody] CreateDocketDto dto)
     {
+        var forbidden = EnsurePermission("docket:create");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         try
         {
             var userId = GetCurrentUserId();
@@ -110,6 +136,12 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<DocketResponseDto>> UpdateDocket(string id, [FromBody] UpdateDocketDto dto)
     {
+        var forbidden = EnsurePermission("docket:update");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var userId = GetCurrentUserId();
         var docket = await _docketService.UpdateDocketAsync(id, dto, userId);
 
@@ -127,6 +159,12 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> DeleteDocket(string id)
     {
+        var forbidden = EnsurePermission("docket:delete");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var userId = GetCurrentUserId();
         var deleted = await _docketService.DeleteDocketAsync(id, userId);
 
@@ -144,8 +182,60 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<DocketResponseDto>> ForwardDocket(string id, [FromBody] ForwardDocketDto dto)
     {
+        var forbidden = EnsurePermission("docket:forward");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var userId = GetCurrentUserId();
         var docket = await _docketService.ForwardDocketAsync(id, dto, userId);
+
+        if (docket == null)
+        {
+            return NotFound(new { message = "Docket not found" });
+        }
+
+        return Ok(docket);
+    }
+
+    [HttpPost("{id}/accept")]
+    [Authorize]
+    [ProducesResponseType(typeof(DocketResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DocketResponseDto>> AcceptDocket(string id, [FromBody] AcceptDocketDto? dto)
+    {
+        var forbidden = EnsurePermission("docket:view");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
+        var userId = GetCurrentUserId();
+        var docket = await _docketService.AcceptDocketAsync(id, userId, dto?.Notes);
+
+        if (docket == null)
+        {
+            return NotFound(new { message = "Docket not found" });
+        }
+
+        return Ok(docket);
+    }
+
+    [HttpPost("{id}/close")]
+    [Authorize]
+    [ProducesResponseType(typeof(DocketResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DocketResponseDto>> CloseDocket(string id)
+    {
+        var forbidden = EnsurePermission("docket:close");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
+        var userId = GetCurrentUserId();
+        var docket = await _docketService.CloseDocketAsync(id, userId);
 
         if (docket == null)
         {
@@ -161,6 +251,12 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> RegenerateQrToken(string id, [FromQuery] int hours = 24)
     {
+        var forbidden = EnsurePermission("docket:update");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         try
         {
             var token = await _docketService.GenerateQrTokenAsync(id, hours);
@@ -179,8 +275,14 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> GetQrCodeImage(string id)
     {
+        var forbidden = EnsurePermission("docket:view");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var userId = GetCurrentUserId();
-        var docket = await _docketService.GetDocketByIdAsync(id, userId);
+        var docket = await _docketService.GetDocketByIdAsync(id, userId, IsElevatedUser());
 
         if (docket == null || string.IsNullOrEmpty(docket.QrToken))
         {
@@ -201,6 +303,12 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(typeof(List<CommentDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<CommentDto>>> GetComments(string id)
     {
+        var forbidden = EnsurePermission("docket:view");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var comments = await _docketService.GetCommentsAsync(id);
         return Ok(comments);
     }
@@ -211,6 +319,12 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<CommentDto>> AddComment(string id, [FromBody] CreateCommentDto dto)
     {
+        var forbidden = EnsurePermission("docket:comment");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         try
         {
             var userId = GetCurrentUserId();
@@ -229,8 +343,14 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(typeof(List<DocketHistoryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<DocketHistoryDto>>> GetHistory(string id)
     {
+        var forbidden = EnsurePermission("docket:view");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var userId = GetCurrentUserId();
-        var docket = await _docketService.GetDocketByIdAsync(id, userId);
+        var docket = await _docketService.GetDocketByIdAsync(id, userId, IsElevatedUser());
 
         if (docket == null)
         {
@@ -259,8 +379,14 @@ public class DocketsController : ControllerBase
     [ProducesResponseType(typeof(List<DocketActionDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<DocketActionDto>>> GetAvailableActions(string id)
     {
+        var forbidden = EnsurePermission("docket:view");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var userId = GetCurrentUserId();
-        var docket = await _docketService.GetDocketByIdAsync(id, userId);
+        var docket = await _docketService.GetDocketByIdAsync(id, userId, IsElevatedUser());
 
         if (docket == null)
         {
@@ -278,18 +404,19 @@ public class DocketsController : ControllerBase
                 break;
             case "forwarded":
                 actions.Add(new DocketActionDto { Action = "accept", Label = "Accept", Description = "Accept the docket" });
-                actions.Add(new DocketActionDto { Action = "return", Label = "Return", Description = "Return to sender" });
                 actions.Add(new DocketActionDto { Action = "forward", Label = "Forward", Description = "Forward to another user" });
                 break;
             case "in_review":
-                actions.Add(new DocketActionDto { Action = "approve", Label = "Approve", Description = "Approve the docket" });
-                actions.Add(new DocketActionDto { Action = "reject", Label = "Reject", Description = "Reject the docket" });
+                actions.Add(new DocketActionDto { Action = "close", Label = "Close", Description = "Close the docket" });
                 actions.Add(new DocketActionDto { Action = "forward", Label = "Forward", Description = "Forward to another user" });
                 break;
-            case "closed":
-                actions.Add(new DocketActionDto { Action = "reopen", Label = "Reopen", Description = "Reopen the docket" });
-                break;
         }
+
+        // Keep action list aligned with implemented action endpoints and permission checks
+        // to avoid showing buttons that would fail with 403/404.
+        actions = actions
+            .Where(action => IsActionPermitted(action.Action))
+            .ToList();
 
         return Ok(actions);
     }
@@ -305,6 +432,47 @@ public class DocketsController : ControllerBase
         }
 
         return userIdClaim;
+    }
+
+    private ActionResult? EnsurePermission(string permission)
+    {
+        return HasPermission(permission) ? null : Forbid();
+    }
+
+    private bool HasPermission(string permission)
+    {
+        var hasWildcard = User.Claims.Any(c =>
+            c.Type == "permission" &&
+            string.Equals(c.Value, "*", StringComparison.OrdinalIgnoreCase));
+
+        if (hasWildcard)
+        {
+            return true;
+        }
+
+        return User.Claims.Any(c =>
+            c.Type == "permission" &&
+            string.Equals(c.Value, permission, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsElevatedUser()
+    {
+        var hasAdminRole = User.Claims.Any(c =>
+            c.Type == ClaimTypes.Role &&
+            string.Equals(c.Value, "admin", StringComparison.OrdinalIgnoreCase));
+
+        return hasAdminRole || HasPermission("admin:access") || HasPermission("user:manage");
+    }
+
+    private bool IsActionPermitted(string action)
+    {
+        return action.ToLowerInvariant() switch
+        {
+            "forward" => HasPermission("docket:forward"),
+            "close" => HasPermission("docket:close"),
+            "accept" => HasPermission("docket:view"),
+            _ => false
+        };
     }
 }
 
@@ -322,4 +490,9 @@ public class DocketActionDto
     public string Action { get; set; } = string.Empty;
     public string Label { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+}
+
+public class AcceptDocketDto
+{
+    public string? Notes { get; set; }
 }

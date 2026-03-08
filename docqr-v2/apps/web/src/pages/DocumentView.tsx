@@ -1,12 +1,15 @@
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import DocumentEditor from '../components/DocumentEditor';
+import { useAuth } from '../context/AuthContext';
 
 export default function DocumentView() {
   const { attachmentId } = useParams<{ attachmentId: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
 
-  const mode = (searchParams.get('mode') || 'view') as 'view' | 'edit';
+  const requestedMode = (searchParams.get('mode') || 'view') as 'view' | 'edit';
+  const mode = requestedMode === 'edit' && hasPermission('attachment:edit') ? 'edit' : 'view';
   const fileName = searchParams.get('name') || 'Document';
 
   if (!attachmentId) {

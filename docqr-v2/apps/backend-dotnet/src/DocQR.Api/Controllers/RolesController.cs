@@ -28,6 +28,12 @@ public class RolesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<ActionResult> GetRoles()
     {
+        var forbidden = EnsureAnyPermission("admin:access", "user:manage");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var roles = await _context.Roles
             .OrderBy(r => r.Name)
             .Select(r => new
@@ -53,6 +59,12 @@ public class RolesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> GetRole(string id)
     {
+        var forbidden = EnsureAnyPermission("admin:access", "user:manage");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var role = await _context.Roles
             .Where(r => r.Id == id)
             .Select(r => new
@@ -89,6 +101,12 @@ public class RolesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult> CreateRole([FromBody] CreateRoleDto dto)
     {
+        var forbidden = EnsurePermission("admin:access");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var normalizedName = dto.Name.Trim();
 
         var exists = await _context.Roles.AnyAsync(r => r.Name.ToLower() == normalizedName.ToLower());
@@ -151,15 +169,22 @@ public class RolesController : ControllerBase
 
     private async Task<ActionResult> UpdateRoleInternal(string id, UpdateRoleDto dto)
     {
+        var forbidden = EnsurePermission("admin:access");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var role = await _context.Roles.FindAsync(id);
         if (role == null)
         {
             return NotFound(new { message = "Role not found" });
         }
 
-        if (role.IsSystemRole)
+        if (role.IsSystemRole && !string.IsNullOrWhiteSpace(dto.Name) &&
+            !string.Equals(dto.Name.Trim(), role.Name, StringComparison.OrdinalIgnoreCase))
         {
-            return BadRequest(new { message = "Cannot modify system roles" });
+            return BadRequest(new { message = "Cannot rename system roles" });
         }
 
         if (!string.IsNullOrWhiteSpace(dto.Name))
@@ -219,6 +244,12 @@ public class RolesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult> DeleteRole(string id)
     {
+        var forbidden = EnsurePermission("admin:access");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var role = await _context.Roles.FindAsync(id);
         if (role == null)
         {
@@ -249,6 +280,12 @@ public class RolesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> AssignRoleToUser(string id, [FromBody] AssignRoleDto dto)
     {
+        var forbidden = EnsurePermission("admin:access");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var role = await _context.Roles.FindAsync(id);
         if (role == null)
         {
@@ -290,6 +327,12 @@ public class RolesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> RemoveRoleFromUser(string id, string userId)
     {
+        var forbidden = EnsurePermission("admin:access");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var userRole = await _context.UserRoles
             .FirstOrDefaultAsync(ur => ur.UserId == userId && ur.RoleId == id);
 
@@ -309,6 +352,12 @@ public class RolesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<ActionResult> GetPermissions()
     {
+        var forbidden = EnsureAnyPermission("admin:access", "user:manage");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         var permissions = await _context.Permissions
             .OrderBy(p => p.ResourceType)
             .ThenBy(p => p.Code)
@@ -335,6 +384,32 @@ public class RolesController : ControllerBase
         }
 
         return userIdClaim;
+    }
+
+    private ActionResult? EnsurePermission(string permission)
+    {
+        return HasPermission(permission) ? null : Forbid();
+    }
+
+    private ActionResult? EnsureAnyPermission(params string[] permissions)
+    {
+        return permissions.Any(HasPermission) ? null : Forbid();
+    }
+
+    private bool HasPermission(string permission)
+    {
+        var hasWildcard = User.Claims.Any(c =>
+            c.Type == "permission" &&
+            string.Equals(c.Value, "*", StringComparison.OrdinalIgnoreCase));
+
+        if (hasWildcard)
+        {
+            return true;
+        }
+
+        return User.Claims.Any(c =>
+            c.Type == "permission" &&
+            string.Equals(c.Value, permission, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryNormalizePermissions(JsonElement? permissionsInput, out string permissionsJson, out string error)

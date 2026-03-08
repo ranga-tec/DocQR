@@ -63,3 +63,19 @@ npm run build --workspace=apps/web
 - Register payload must include `username`.
 - Scanner endpoint exists at `/api/v1/dockets/{docketId}/attachments/scan`.
 - Digital signature provider integration is still a placeholder path and should be completed with provider adapters.
+
+## Recent Updates (2026-03-08)
+
+- Workflow API parity on .NET backend:
+  - Added `POST /api/v1/dockets/{id}/accept`
+  - Added `POST /api/v1/dockets/{id}/close`
+  - Aligned available actions to implemented endpoints to avoid UI 404s
+- Role security hardening:
+  - Frontend route guards now enforce permissions for `/users`, `/departments`, `/roles`, `/docket-types`, `/registers`, and `/admin`
+  - Backend `RolesController` now enforces permission checks (read requires `admin:access` or `user:manage`; mutating role operations require `admin:access`)
+- Recipient/view-only restrictions:
+  - Commenting and reply UI are hidden for users without `docket:comment`
+  - Server-side permission checks remain authoritative
+- Notification UX:
+  - Bell icon now opens a notification panel with recent items
+  - Clicking a notification marks it read and opens its target docket (falls back to Inbox)

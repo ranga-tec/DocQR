@@ -37,9 +37,14 @@ public class OnlyOfficeController : ControllerBase
         string attachmentId,
         [FromQuery] string mode = "view")
     {
+        if (!HasPermission("attachment:view"))
+        {
+            return Forbid();
+        }
+
+        // Keep the lookup minimal. Including required navigations can unexpectedly
+        // filter out rows when related records are in inconsistent states.
         var attachment = await _context.DocketAttachments
-            .Include(a => a.Docket)
-            .Include(a => a.Uploader)
             .FirstOrDefaultAsync(a => a.Id == attachmentId && a.DeletedAt == null);
 
         if (attachment == null)
@@ -49,6 +54,12 @@ public class OnlyOfficeController : ControllerBase
 
         var userId = GetCurrentUserId();
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        var isElevated = IsElevatedUser();
+
+        if (!isElevated && !await CanAccessDocketAsync(attachment.DocketId, userId))
+        {
+            return Forbid();
+        }
 
         // Get OnlyOffice configuration
         var onlyOfficeUrl = _configuration["OnlyOffice:ServerUrl"] ?? "http://localhost:8080";
@@ -78,8 +89,11 @@ public class OnlyOfficeController : ControllerBase
         var documentType = GetDocumentType(attachment.MimeType);
         var fileType = GetFileExtension(attachment.OriginalFileName);
 
-        // For PDFs, always use edit mode to enable commenting/annotation
-        var effectiveMode = documentType == "pdf" ? "edit" : mode;
+        var requestedEditMode = string.Equals(mode, "edit", StringComparison.OrdinalIgnoreCase);
+        var canEdit = HasPermission("attachment:edit");
+        var canComment = HasPermission("docket:comment");
+        var canDownload = HasPermission("attachment:download") || HasPermission("attachment:view") || canEdit;
+        var effectiveMode = requestedEditMode && canEdit ? "edit" : "view";
 
         // Include version in key to bust cache after edits
         var documentKey = $"{attachment.Id}_v{attachment.Version}_{attachment.UploadedAt:yyyyMMddHHmmss}";
@@ -95,12 +109,12 @@ public class OnlyOfficeController : ControllerBase
                 Url = documentUrl,
                 Permissions = new OnlyOfficePermissions
                 {
-                    Download = true,
+                    Download = canDownload,
                     Edit = effectiveMode == "edit",
                     Print = true,
                     Review = effectiveMode == "edit",
-                    Comment = true,  // Allow commenting even in view mode
-                    FillForms = true
+                    Comment = canComment,
+                    FillForms = effectiveMode == "edit"
                 }
             },
             DocumentType = documentType,
@@ -117,7 +131,7 @@ public class OnlyOfficeController : ControllerBase
                 {
                     Autosave = true,
                     Chat = false,
-                    Comments = true,
+                    Comments = canComment,
                     CompactHeader = false,
                     CompactToolbar = false,
                     Feedback = false,
@@ -383,6 +397,41 @@ public class OnlyOfficeController : ControllerBase
         }
 
         return userIdClaim;
+    }
+
+    private bool HasPermission(string permission)
+    {
+        var hasWildcard = User.Claims.Any(c =>
+            c.Type == "permission" &&
+            string.Equals(c.Value, "*", StringComparison.OrdinalIgnoreCase));
+
+        if (hasWildcard)
+        {
+            return true;
+        }
+
+        return User.Claims.Any(c =>
+            c.Type == "permission" &&
+            string.Equals(c.Value, permission, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsElevatedUser()
+    {
+        var hasAdminRole = User.Claims.Any(c =>
+            c.Type == ClaimTypes.Role &&
+            string.Equals(c.Value, "admin", StringComparison.OrdinalIgnoreCase));
+
+        return hasAdminRole || HasPermission("admin:access");
+    }
+
+    private Task<bool> CanAccessDocketAsync(string docketId, string userId)
+    {
+        return _context.Dockets.AnyAsync(d =>
+            d.Id == docketId &&
+            d.DeletedAt == null &&
+            (d.CreatedBy == userId ||
+             d.CurrentAssigneeId == userId ||
+             d.Assignments.Any(a => a.AssignedTo == userId)));
     }
 }
 

@@ -64,9 +64,9 @@ async function main() {
     {
       name: 'recipient',
       displayName: 'Recipient',
-      description: 'Review and comment',
+      description: 'View assigned dockets and attachments',
       isSystemRole: true,
-      permissions: ['docket:view', 'docket:comment', 'attachment:view'],
+      permissions: ['docket:view', 'attachment:view'],
     },
     {
       name: 'approver',

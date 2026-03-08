@@ -47,7 +47,7 @@ function App() {
             <Route
               path="/document/:attachmentId"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute permission="attachment:view">
                   <DocumentView />
                 </ProtectedRoute>
               }
@@ -63,17 +63,67 @@ function App() {
             >
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/dockets" element={<DocketsList />} />
-              <Route path="/dockets/new" element={<CreateDocket />} />
+              <Route
+                path="/dockets/new"
+                element={(
+                  <ProtectedRoute permission="docket:create">
+                    <CreateDocket />
+                  </ProtectedRoute>
+                )}
+              />
               <Route path="/dockets/:id" element={<DocketDetail />} />
               <Route path="/inbox" element={<Inbox />} />
               <Route path="/scan" element={<QrScanner />} />
-              <Route path="/users" element={<Users />} />
-              <Route path="/departments" element={<Departments />} />
-              <Route path="/roles" element={<Roles />} />
-              <Route path="/docket-types" element={<DocketTypes />} />
-              <Route path="/registers" element={<Registers />} />
+              <Route
+                path="/users"
+                element={(
+                  <ProtectedRoute permission="user:manage">
+                    <Users />
+                  </ProtectedRoute>
+                )}
+              />
+              <Route
+                path="/departments"
+                element={(
+                  <ProtectedRoute permission="user:manage">
+                    <Departments />
+                  </ProtectedRoute>
+                )}
+              />
+              <Route
+                path="/roles"
+                element={(
+                  <ProtectedRoute permission="admin:access">
+                    <Roles />
+                  </ProtectedRoute>
+                )}
+              />
+              <Route
+                path="/docket-types"
+                element={(
+                  <ProtectedRoute permission="admin:access">
+                    <DocketTypes />
+                  </ProtectedRoute>
+                )}
+              />
+              <Route
+                path="/registers"
+                element={(
+                  <ProtectedRoute permission="register:manage">
+                    <Registers />
+                  </ProtectedRoute>
+                )}
+              />
+              <Route path="/profile" element={<Navigate to="/settings?tab=profile" replace />} />
               <Route path="/settings" element={<Settings />} />
-              <Route path="/admin" element={<Admin />} />
+              <Route
+                path="/admin"
+                element={(
+                  <ProtectedRoute permission="admin:access">
+                    <Admin />
+                  </ProtectedRoute>
+                )}
+              />
             </Route>
 
             {/* Redirect root to dashboard */}

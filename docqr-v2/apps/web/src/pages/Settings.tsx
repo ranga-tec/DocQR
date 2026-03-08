@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { authApi, notificationsApi } from '../lib/api';
@@ -8,10 +8,18 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 
+type SettingsTab = 'profile' | 'notifications' | 'security' | 'appearance';
+
+function isSettingsTab(tab: string | null): tab is SettingsTab {
+  return tab === 'profile' || tab === 'notifications' || tab === 'security' || tab === 'appearance';
+}
+
 export default function Settings() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, logout, refreshUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'appearance'>('profile');
+  const initialTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(isSettingsTab(initialTab) ? initialTab : 'profile');
   const queryClient = useQueryClient();
   const [profileForm, setProfileForm] = useState({
     firstName: '',
@@ -58,6 +66,20 @@ export default function Settings() {
     }));
   }, [preferencesData]);
 
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (isSettingsTab(tabParam) && tabParam !== activeTab) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams, activeTab]);
+
+  const handleTabChange = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tab);
+    setSearchParams(next, { replace: true });
+  };
+
   const savePreferencesMutation = useMutation({
     mutationFn: () => notificationsApi.updatePreferences(preferences),
     onSuccess: () => {
@@ -97,7 +119,7 @@ export default function Settings() {
     },
   });
 
-  const tabs = [
+  const tabs: { id: SettingsTab; label: string; icon: string }[] = [
     { id: 'profile', label: 'Profile', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
     { id: 'notifications', label: 'Notifications', icon: 'M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9' },
     { id: 'security', label: 'Security', icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z' },
@@ -117,7 +139,7 @@ export default function Settings() {
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              onClick={() => handleTabChange(tab.id)}
               className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-left transition-colors ${
                 activeTab === tab.id
                   ? 'bg-primary text-primary-foreground'

@@ -96,6 +96,7 @@ export default function Roles() {
     displayName: '',
     description: '',
     permissions: [] as string[],
+    isSystemRole: false,
   });
 
   const { data: rolesData, isLoading } = useQuery({
@@ -181,6 +182,7 @@ export default function Roles() {
       displayName: role.displayName || role.name,
       description: role.description || '',
       permissions: toPermissions(role.permissions),
+      isSystemRole: role.isSystemRole,
     });
     setShowEditModal(true);
   };
@@ -193,7 +195,7 @@ export default function Roles() {
         <div>
           <h1 className="text-2xl font-bold">Roles & Permissions</h1>
           <p className="text-muted-foreground">Manage role creation, updates, and access controls</p>
-          <p className="text-xs text-muted-foreground mt-1">System roles are locked. Create custom roles to edit or delete.</p>
+          <p className="text-xs text-muted-foreground mt-1">System role names/deletion are locked. Permissions can still be edited.</p>
         </div>
         <Button onClick={() => setShowCreateModal(true)}>
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -274,8 +276,6 @@ export default function Roles() {
                         variant="ghost"
                         size="sm"
                         onClick={() => openEdit(role)}
-                        disabled={role.isSystemRole}
-                        title={role.isSystemRole ? 'System roles cannot be edited or deleted' : undefined}
                       >
                         Edit
                       </Button>
@@ -435,7 +435,8 @@ export default function Roles() {
                       deleteRoleMutation.mutate(editForm.id);
                     }
                   }}
-                  disabled={deleteRoleMutation.isPending}
+                  disabled={deleteRoleMutation.isPending || editForm.isSystemRole}
+                  title={editForm.isSystemRole ? 'System roles cannot be deleted' : undefined}
                 >
                   Delete
                 </Button>
@@ -507,8 +508,6 @@ export default function Roles() {
                     setSelectedRole(null);
                     openEdit(selectedRole);
                   }}
-                  disabled={selectedRole.isSystemRole}
-                  title={selectedRole.isSystemRole ? 'System roles cannot be edited or deleted' : undefined}
                 >
                   Edit Role
                 </Button>

@@ -7,7 +7,8 @@ import { getStatusColor, formatRelativeTime } from '../lib/utils';
 import { extractDocketList } from '../lib/docket';
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreateDocket = hasPermission('docket:create');
 
   const { data: recentDockets } = useQuery({
     queryKey: ['dockets', 'recent'],
@@ -76,15 +77,17 @@ export default function Dashboard() {
             Here's what's happening with your dockets today.
           </p>
         </div>
-        <Link
-          to="/dockets/new"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          New Docket
-        </Link>
+        {canCreateDocket ? (
+          <Link
+            to="/dockets/new"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Docket
+          </Link>
+        ) : null}
       </div>
 
       {/* Stats Grid */}

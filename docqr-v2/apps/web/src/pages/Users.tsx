@@ -162,6 +162,7 @@ export default function Users() {
   const [editForm, setEditForm] = useState({
     id: '',
     email: '',
+    password: '',
     firstName: '',
     lastName: '',
     phone: '',
@@ -232,6 +233,7 @@ export default function Users() {
     mutationFn: () =>
       usersApi.update(editForm.id, {
         email: editForm.email.trim(),
+        password: editForm.password || undefined,
         firstName: editForm.firstName.trim() || undefined,
         lastName: editForm.lastName.trim() || undefined,
         phone: editForm.phone.trim() || undefined,
@@ -289,6 +291,7 @@ export default function Users() {
     setEditForm({
       id: user.id,
       email: user.email || '',
+      password: '',
       firstName: user.firstName || '',
       lastName: user.lastName || '',
       phone: user.phone || '',
@@ -578,6 +581,10 @@ export default function Users() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                if (editForm.password && editForm.password.length < 8) {
+                  alert('New password must be at least 8 characters.');
+                  return;
+                }
                 updateUserMutation.mutate();
               }}
             >
@@ -617,6 +624,17 @@ export default function Users() {
                       id="edit-last-name"
                       value={editForm.lastName}
                       onChange={(e) => setEditForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="edit-password">New Password (Optional)</Label>
+                    <Input
+                      id="edit-password"
+                      type="password"
+                      minLength={8}
+                      value={editForm.password}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, password: e.target.value }))}
+                      placeholder="Leave blank to keep current password"
                     />
                   </div>
                 </div>
