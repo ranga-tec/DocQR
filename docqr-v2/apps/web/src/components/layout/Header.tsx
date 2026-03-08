@@ -34,31 +34,38 @@ export default function Header() {
   const [showDropdown, setShowDropdown] = useState(false);
 
   const { data: unreadData } = useQuery({
-    queryKey: ['notifications-unread-count'],
+    queryKey: ['notifications-unread-count', user?.id],
     queryFn: () => notificationsApi.unreadCount(),
-    refetchInterval: 30000,
+    enabled: !!user?.id,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
   });
 
   const { data: notificationsData, isFetching: isLoadingNotifications } = useQuery({
-    queryKey: ['notifications', 'header'],
+    queryKey: ['notifications', 'header', user?.id],
     queryFn: () => notificationsApi.list({ limit: 8 }),
-    enabled: showNotifications,
-    refetchInterval: showNotifications ? 15000 : false,
+    enabled: showNotifications && !!user?.id,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchInterval: showNotifications ? 5000 : false,
+    refetchIntervalInBackground: true,
   });
 
   const markAsReadMutation = useMutation({
     mutationFn: (notificationId: string) => notificationsApi.markAsRead(notificationId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] });
-      queryClient.invalidateQueries({ queryKey: ['notifications', 'header'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'header', user?.id] });
     },
   });
 
   const markAllAsReadMutation = useMutation({
     mutationFn: () => notificationsApi.markAllAsRead(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] });
-      queryClient.invalidateQueries({ queryKey: ['notifications', 'header'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'header', user?.id] });
     },
   });
 
@@ -67,6 +74,9 @@ export default function Header() {
 
   const handleLogout = async () => {
     await logout();
+    setShowDropdown(false);
+    setShowNotifications(false);
+    navigate('/login', { replace: true });
   };
 
   const handleNotificationClick = async (notification: NotificationItem) => {

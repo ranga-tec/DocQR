@@ -35,6 +35,19 @@ public class AttachmentsController : ControllerBase
     [ProducesResponseType(typeof(List<AttachmentDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<AttachmentDto>>> GetAttachments(string docketId)
     {
+        var forbidden = EnsurePermission("attachment:view");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
+        var userId = GetCurrentUserId();
+        var accessResult = await EnsureDocketAccessAsync(docketId, userId);
+        if (accessResult != null)
+        {
+            return accessResult;
+        }
+
         var attachments = await _docketService.GetAttachmentsAsync(docketId);
         return Ok(attachments);
     }
@@ -48,6 +61,12 @@ public class AttachmentsController : ControllerBase
         string docketId,
         IFormFile file)
     {
+        var forbidden = EnsurePermission("attachment:upload");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
         if (file == null || file.Length == 0)
         {
             return BadRequest(new { message = "No file uploaded" });
@@ -61,6 +80,11 @@ public class AttachmentsController : ControllerBase
         try
         {
             var userId = GetCurrentUserId();
+            var accessResult = await EnsureDocketAccessAsync(docketId, userId);
+            if (accessResult != null)
+            {
+                return accessResult;
+            }
 
             using var memoryStream = new MemoryStream();
             await file.CopyToAsync(memoryStream);
@@ -103,6 +127,19 @@ public class AttachmentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AttachmentDto>> GetAttachment(string docketId, string attachmentId)
     {
+        var forbidden = EnsurePermission("attachment:view");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
+        var userId = GetCurrentUserId();
+        var accessResult = await EnsureDocketAccessAsync(docketId, userId);
+        if (accessResult != null)
+        {
+            return accessResult;
+        }
+
         var attachments = await _docketService.GetAttachmentsAsync(docketId);
         var attachment = attachments.FirstOrDefault(a => a.Id == attachmentId);
 
@@ -120,6 +157,19 @@ public class AttachmentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> DownloadAttachment(string docketId, string attachmentId)
     {
+        var forbidden = EnsureAnyPermission("attachment:download", "attachment:view", "attachment:edit");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
+        var userId = GetCurrentUserId();
+        var accessResult = await EnsureDocketAccessAsync(docketId, userId);
+        if (accessResult != null)
+        {
+            return accessResult;
+        }
+
         var attachments = await _docketService.GetAttachmentsAsync(docketId);
         var attachment = attachments.FirstOrDefault(a => a.Id == attachmentId);
 
@@ -147,6 +197,19 @@ public class AttachmentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> DeleteAttachment(string docketId, string attachmentId)
     {
+        var forbidden = EnsurePermission("attachment:edit");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
+        var userId = GetCurrentUserId();
+        var accessResult = await EnsureDocketAccessAsync(docketId, userId);
+        if (accessResult != null)
+        {
+            return accessResult;
+        }
+
         var deleted = await _docketService.DeleteAttachmentAsync(docketId, attachmentId);
 
         if (!deleted)
@@ -163,6 +226,19 @@ public class AttachmentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> VerifyIntegrity(string docketId, string attachmentId)
     {
+        var forbidden = EnsurePermission("attachment:view");
+        if (forbidden != null)
+        {
+            return forbidden;
+        }
+
+        var userId = GetCurrentUserId();
+        var accessResult = await EnsureDocketAccessAsync(docketId, userId);
+        if (accessResult != null)
+        {
+            return accessResult;
+        }
+
         var attachments = await _docketService.GetAttachmentsAsync(docketId);
         var attachment = attachments.FirstOrDefault(a => a.Id == attachmentId);
 
@@ -214,5 +290,46 @@ public class AttachmentsController : ControllerBase
         }
 
         return userIdClaim;
+    }
+
+    private async Task<ActionResult?> EnsureDocketAccessAsync(string docketId, string userId)
+    {
+        var docket = await _docketService.GetDocketByIdAsync(docketId, userId, IsElevatedUser());
+        return docket == null ? NotFound(new { message = "Docket not found" }) : null;
+    }
+
+    private ActionResult? EnsurePermission(string permission)
+    {
+        return HasPermission(permission) ? null : Forbid();
+    }
+
+    private ActionResult? EnsureAnyPermission(params string[] permissions)
+    {
+        return permissions.Any(HasPermission) ? null : Forbid();
+    }
+
+    private bool HasPermission(string permission)
+    {
+        var hasWildcard = User.Claims.Any(c =>
+            c.Type == "permission" &&
+            string.Equals(c.Value, "*", StringComparison.OrdinalIgnoreCase));
+
+        if (hasWildcard)
+        {
+            return true;
+        }
+
+        return User.Claims.Any(c =>
+            c.Type == "permission" &&
+            string.Equals(c.Value, permission, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsElevatedUser()
+    {
+        var hasAdminRole = User.Claims.Any(c =>
+            c.Type == ClaimTypes.Role &&
+            string.Equals(c.Value, "admin", StringComparison.OrdinalIgnoreCase));
+
+        return hasAdminRole || HasPermission("admin:access") || HasPermission("user:manage");
     }
 }

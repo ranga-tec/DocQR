@@ -63,7 +63,7 @@ public class OnlyOfficeController : ControllerBase
 
         // Get OnlyOffice configuration
         var onlyOfficeUrl = _configuration["OnlyOffice:ServerUrl"] ?? "http://localhost:8080";
-        var jwtSecret = _configuration["OnlyOffice:JwtSecret"] ?? "your-256-bit-secret-for-onlyoffice-jwt";
+        var jwtSecret = _configuration["OnlyOffice:JwtSecret"] ?? "onlyoffice_jwt_secret";
         var jwtEnabled = _configuration.GetValue<bool>("OnlyOffice:JwtEnabled", true);
 
         // Build document URL - use host.docker.internal for Docker containers to reach host
@@ -142,54 +142,55 @@ public class OnlyOfficeController : ControllerBase
             }
         };
 
-        // Generate JWT token if enabled (token payload should NOT include the token field itself)
-        if (jwtEnabled)
+        if (!jwtEnabled)
         {
-            // Create a payload for signing - must use same property names as expected by OnlyOffice
-            // The JsonSerializerOptions with CamelCase policy handles the naming
-            config.Token = GenerateJwtTokenFromObject(new
-            {
-                document = new
-                {
-                    fileType = config.Document.FileType,
-                    key = config.Document.Key,
-                    title = config.Document.Title,
-                    url = config.Document.Url,
-                    permissions = new
-                    {
-                        download = config.Document.Permissions.Download,
-                        edit = config.Document.Permissions.Edit,
-                        print = config.Document.Permissions.Print,
-                        review = config.Document.Permissions.Review,
-                        comment = config.Document.Permissions.Comment,
-                        fillForms = config.Document.Permissions.FillForms
-                    }
-                },
-                documentType = config.DocumentType,
-                editorConfig = new
-                {
-                    mode = config.EditorConfig.Mode,
-                    callbackUrl = config.EditorConfig.CallbackUrl,
-                    user = new
-                    {
-                        id = config.EditorConfig.User.Id,
-                        name = config.EditorConfig.User.Name
-                    },
-                    customization = new
-                    {
-                        autosave = config.EditorConfig.Customization.Autosave,
-                        chat = config.EditorConfig.Customization.Chat,
-                        comments = config.EditorConfig.Customization.Comments,
-                        compactHeader = config.EditorConfig.Customization.CompactHeader,
-                        compactToolbar = config.EditorConfig.Customization.CompactToolbar,
-                        feedback = config.EditorConfig.Customization.Feedback,
-                        forcesave = config.EditorConfig.Customization.Forcesave,
-                        help = config.EditorConfig.Customization.Help
-                    },
-                    lang = config.EditorConfig.Lang
-                }
-            }, jwtSecret);
+            _logger.LogDebug("OnlyOffice:JwtEnabled is false. A config token is still issued for editor compatibility.");
         }
+
+        // Always issue a signed config token. Some OnlyOffice deployments enforce
+        // browser token validation even when backend toggles are inconsistent.
+        config.Token = GenerateJwtTokenFromObject(new
+        {
+            document = new
+            {
+                fileType = config.Document.FileType,
+                key = config.Document.Key,
+                title = config.Document.Title,
+                url = config.Document.Url,
+                permissions = new
+                {
+                    download = config.Document.Permissions.Download,
+                    edit = config.Document.Permissions.Edit,
+                    print = config.Document.Permissions.Print,
+                    review = config.Document.Permissions.Review,
+                    comment = config.Document.Permissions.Comment,
+                    fillForms = config.Document.Permissions.FillForms
+                }
+            },
+            documentType = config.DocumentType,
+            editorConfig = new
+            {
+                mode = config.EditorConfig.Mode,
+                callbackUrl = config.EditorConfig.CallbackUrl,
+                user = new
+                {
+                    id = config.EditorConfig.User.Id,
+                    name = config.EditorConfig.User.Name
+                },
+                customization = new
+                {
+                    autosave = config.EditorConfig.Customization.Autosave,
+                    chat = config.EditorConfig.Customization.Chat,
+                    comments = config.EditorConfig.Customization.Comments,
+                    compactHeader = config.EditorConfig.Customization.CompactHeader,
+                    compactToolbar = config.EditorConfig.Customization.CompactToolbar,
+                    feedback = config.EditorConfig.Customization.Feedback,
+                    forcesave = config.EditorConfig.Customization.Forcesave,
+                    help = config.EditorConfig.Customization.Help
+                },
+                lang = config.EditorConfig.Lang
+            }
+        }, jwtSecret);
 
         return Ok(new
         {

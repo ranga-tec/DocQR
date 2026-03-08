@@ -195,7 +195,7 @@ export default function Roles() {
         <div>
           <h1 className="text-2xl font-bold">Roles & Permissions</h1>
           <p className="text-muted-foreground">Manage role creation, updates, and access controls</p>
-          <p className="text-xs text-muted-foreground mt-1">System role names/deletion are locked. Permissions can still be edited.</p>
+          <p className="text-xs text-muted-foreground mt-1">System roles are locked and cannot be edited or deleted.</p>
         </div>
         <Button onClick={() => setShowCreateModal(true)}>
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -276,6 +276,7 @@ export default function Roles() {
                         variant="ghost"
                         size="sm"
                         onClick={() => openEdit(role)}
+                        disabled={role.isSystemRole}
                       >
                         Edit
                       </Button>

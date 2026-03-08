@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { docketsApi } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { getStatusColor, getPriorityColor, formatDate } from '../lib/utils';
@@ -11,14 +12,20 @@ type FilterTab = 'pending' | 'action_required' | 'forwarded' | 'all';
 
 export default function Inbox() {
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
+  const { user } = useAuth();
 
   // Fetch dockets assigned to current user
   const { data, isLoading } = useQuery({
-    queryKey: ['inbox', activeTab],
+    queryKey: ['inbox', user?.id, activeTab],
     queryFn: () => docketsApi.list({
       assignedToMe: true,
       status: activeTab === 'all' ? undefined : getStatusFilter(activeTab),
     }),
+    enabled: !!user?.id,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
   });
 
   const docketList = extractDocketList(data?.data);

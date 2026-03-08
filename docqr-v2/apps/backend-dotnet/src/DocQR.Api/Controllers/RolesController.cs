@@ -181,10 +181,9 @@ public class RolesController : ControllerBase
             return NotFound(new { message = "Role not found" });
         }
 
-        if (role.IsSystemRole && !string.IsNullOrWhiteSpace(dto.Name) &&
-            !string.Equals(dto.Name.Trim(), role.Name, StringComparison.OrdinalIgnoreCase))
+        if (role.IsSystemRole)
         {
-            return BadRequest(new { message = "Cannot rename system roles" });
+            return BadRequest(new { message = "System roles cannot be edited" });
         }
 
         if (!string.IsNullOrWhiteSpace(dto.Name))

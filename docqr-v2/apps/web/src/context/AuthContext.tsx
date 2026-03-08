@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { authApi } from '../lib/api';
 
 interface User {
@@ -29,10 +30,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   const loadUser = useCallback(async () => {
     const token = localStorage.getItem('accessToken');
     if (!token) {
+      setUser(null);
       setIsLoading(false);
       return;
     }
@@ -51,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
+      setUser(null);
     } finally {
       setIsLoading(false);
     }
@@ -63,6 +67,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     const response = await authApi.login(email, password);
     const { accessToken, refreshToken, user: userData } = response.data;
+
+    // Prevent stale cross-user data (roles, inbox, notifications, admin pages).
+    queryClient.clear();
 
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
@@ -89,6 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
+    queryClient.clear();
     setUser(null);
   };
 
