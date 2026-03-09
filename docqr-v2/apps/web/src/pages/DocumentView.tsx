@@ -5,6 +5,13 @@ import { Button } from '../components/ui/button';
 import { docketsApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 
+const ONLYOFFICE_VIEWABLE_EXTENSIONS = new Set([
+  'doc', 'docx', 'odt', 'rtf', 'txt',
+  'xls', 'xlsx', 'ods', 'csv',
+  'ppt', 'pptx', 'odp',
+  'pdf', 'djvu', 'xps', 'epub',
+]);
+
 const TEXT_MIME_PREFIXES = ['text/'];
 const TEXT_MIME_TYPES = new Set([
   'application/json',
@@ -36,6 +43,11 @@ function isText(mimeType: string, fileName: string): boolean {
     || lowerName.endsWith('.md');
 }
 
+function isOnlyOfficeViewable(fileName: string): boolean {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  return ONLYOFFICE_VIEWABLE_EXTENSIONS.has(ext);
+}
+
 export default function DocumentView() {
   const { attachmentId } = useParams<{ attachmentId: string }>();
   const [searchParams] = useSearchParams();
@@ -50,9 +62,11 @@ export default function DocumentView() {
   const mode = requestedMode === 'edit' && hasPermission('attachment:edit') ? 'edit' : 'view';
   const docketId = searchParams.get('docketId');
   const fileName = searchParams.get('name') || 'Document';
+  const forceNativeViewer = (searchParams.get('viewer') || '').toLowerCase() === 'native';
+  const useOnlyOfficeViewer = mode === 'view' && isOnlyOfficeViewable(fileName) && !forceNativeViewer;
 
   useEffect(() => {
-    if (mode !== 'view' || !attachmentId) {
+    if (mode !== 'view' || !attachmentId || useOnlyOfficeViewer) {
       return;
     }
 
@@ -92,7 +106,7 @@ export default function DocumentView() {
     return () => {
       isCancelled = true;
     };
-  }, [mode, docketId, attachmentId]);
+  }, [mode, docketId, attachmentId, useOnlyOfficeViewer]);
 
   useEffect(() => {
     return () => {
@@ -107,6 +121,17 @@ export default function DocumentView() {
       <div className="flex items-center justify-center min-h-screen">
         <p>Invalid attachment ID</p>
       </div>
+    );
+  }
+
+  if (useOnlyOfficeViewer) {
+    return (
+      <DocumentEditor
+        attachmentId={attachmentId}
+        fileName={fileName}
+        mode="view"
+        onClose={() => navigate(-1)}
+      />
     );
   }
 

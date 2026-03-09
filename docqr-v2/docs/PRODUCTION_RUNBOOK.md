@@ -236,6 +236,9 @@ Fix:
    - `permissions.review=true`
    - `editorConfig.customization.comments=true`
    - keep `permissions.comment` permission-gated (write control)
+3. Current web behavior (as of March 9, 2026):
+   - `mode=view` for OnlyOffice-supported formats now opens OnlyOffice viewer (not browser PDF iframe), so comment threads are visible.
+   - Add `&viewer=native` to the document URL to force browser-native preview when needed for troubleshooting.
 
 ## 7. Operations Notes
 

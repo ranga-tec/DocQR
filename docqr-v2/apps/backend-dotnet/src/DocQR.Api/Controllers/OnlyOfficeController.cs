@@ -95,6 +95,7 @@ public class OnlyOfficeController : ControllerBase
         // Viewing an attachment should still show existing comment threads, while
         // write actions (new/edit comments) remain permission-gated.
         var canViewComments = HasPermission("attachment:view");
+        var canWriteComments = canComment && requestedEditMode && canEdit;
         var canDownload = HasPermission("attachment:download") || HasPermission("attachment:view") || canEdit;
         var effectiveMode = requestedEditMode && canEdit ? "edit" : "view";
 
@@ -116,7 +117,7 @@ public class OnlyOfficeController : ControllerBase
                     Edit = effectiveMode == "edit",
                     Print = true,
                     Review = effectiveMode == "edit" || canViewComments,
-                    Comment = canComment,
+                    Comment = canWriteComments,
                     FillForms = effectiveMode == "edit"
                 }
             },
@@ -139,7 +140,9 @@ public class OnlyOfficeController : ControllerBase
                     CompactToolbar = false,
                     Feedback = false,
                     Forcesave = true,
-                    Help = false
+                    Help = false,
+                    HideRightMenu = false,
+                    ShowReviewChanges = true
                 },
                 Lang = "en"
             }
@@ -189,7 +192,9 @@ public class OnlyOfficeController : ControllerBase
                     compactToolbar = config.EditorConfig.Customization.CompactToolbar,
                     feedback = config.EditorConfig.Customization.Feedback,
                     forcesave = config.EditorConfig.Customization.Forcesave,
-                    help = config.EditorConfig.Customization.Help
+                    help = config.EditorConfig.Customization.Help,
+                    hideRightMenu = config.EditorConfig.Customization.HideRightMenu,
+                    showReviewChanges = config.EditorConfig.Customization.ShowReviewChanges
                 },
                 lang = config.EditorConfig.Lang
             }
@@ -547,6 +552,12 @@ public class OnlyOfficeCustomization
 
     [JsonPropertyName("help")]
     public bool Help { get; set; }
+
+    [JsonPropertyName("hideRightMenu")]
+    public bool HideRightMenu { get; set; }
+
+    [JsonPropertyName("showReviewChanges")]
+    public bool ShowReviewChanges { get; set; }
 }
 
 public class OnlyOfficeCallbackDto
