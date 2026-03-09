@@ -219,6 +219,24 @@ If `targetPort` is null or wrong:
 - Symptom: OnlyOffice domain returns `502 Bad Gateway` while deployment shows `SUCCESS`.
 - Fix: update the service domain target port to `8000` (via Railway dashboard or Railway GraphQL `serviceDomainUpdate` mutation).
 
+## 6.8 OnlyOffice comments list missing for view-only users
+
+Symptom:
+
+- In document viewer, left panel shows only PDF/bookmark outline and comment threads are not visible.
+
+Cause:
+
+- API config sent `review=false` / `customization.comments=false` for non-edit users, which hides comments UI even for read-only viewers.
+
+Fix:
+
+1. Deploy backend commit `bdbcff7` or newer.
+2. Ensure OnlyOffice config for viewers uses:
+   - `permissions.review=true`
+   - `editorConfig.customization.comments=true`
+   - keep `permissions.comment` permission-gated (write control)
+
 ## 7. Operations Notes
 
 - Railway logs can be queried via CLI or GraphQL API.
