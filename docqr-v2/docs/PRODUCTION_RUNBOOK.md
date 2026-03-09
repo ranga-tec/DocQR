@@ -240,6 +240,26 @@ Fix:
    - `mode=view` for OnlyOffice-supported formats now opens OnlyOffice viewer (not browser PDF iframe), so comment threads are visible.
    - Add `&viewer=native` to the document URL to force browser-native preview when needed for troubleshooting.
 
+## 6.9 OnlyOffice error: "The \"documentType\" parameter for the config object is invalid"
+
+Symptom:
+
+- Viewer fails to open and OnlyOffice returns: `"The \"documentType\" parameter for the config object is invalid."`
+
+Cause:
+
+- API sends unsupported `documentType` (for example `pdf`), but this deployment only accepts:
+  - `word`
+  - `cell`
+  - `slide`
+
+Fix:
+
+1. Deploy backend commit `c0dd5e5` or newer.
+2. Ensure PDF mapping returns:
+   - `fileType: "pdf"`
+   - `documentType: "word"`
+
 ## 7. Operations Notes
 
 - Railway logs can be queried via CLI or GraphQL API.
