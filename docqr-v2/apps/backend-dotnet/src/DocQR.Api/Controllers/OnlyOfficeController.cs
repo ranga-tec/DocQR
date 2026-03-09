@@ -92,6 +92,9 @@ public class OnlyOfficeController : ControllerBase
         var requestedEditMode = string.Equals(mode, "edit", StringComparison.OrdinalIgnoreCase);
         var canEdit = HasPermission("attachment:edit");
         var canComment = HasPermission("docket:comment");
+        // Viewing an attachment should still show existing comment threads, while
+        // write actions (new/edit comments) remain permission-gated.
+        var canViewComments = HasPermission("attachment:view");
         var canDownload = HasPermission("attachment:download") || HasPermission("attachment:view") || canEdit;
         var effectiveMode = requestedEditMode && canEdit ? "edit" : "view";
 
@@ -112,7 +115,7 @@ public class OnlyOfficeController : ControllerBase
                     Download = canDownload,
                     Edit = effectiveMode == "edit",
                     Print = true,
-                    Review = effectiveMode == "edit",
+                    Review = effectiveMode == "edit" || canViewComments,
                     Comment = canComment,
                     FillForms = effectiveMode == "edit"
                 }
@@ -131,7 +134,7 @@ public class OnlyOfficeController : ControllerBase
                 {
                     Autosave = true,
                     Chat = false,
-                    Comments = canComment,
+                    Comments = canViewComments,
                     CompactHeader = false,
                     CompactToolbar = false,
                     Feedback = false,
