@@ -330,7 +330,9 @@ public class OnlyOfficeController : ControllerBase
             "application/vnd.ms-excel" => "cell",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation" => "slide",
             "application/vnd.ms-powerpoint" => "slide",
-            "application/pdf" => "pdf",  // Native PDF editor (OnlyOffice 7.2+)
+            // `documentType` in Docs API must be one of: word, cell, slide.
+            // PDF files are still opened via fileType/pdf under the "word" editor family.
+            "application/pdf" => "word",
             "text/plain" => "word",
             "application/rtf" => "word",
             _ => "word"
