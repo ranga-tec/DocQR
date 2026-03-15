@@ -6,7 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { getStatusColor, getPriorityColor, formatRelativeTime } from '../../lib/utils';
-import { extractDocketList } from '../../lib/docket';
+import { extractDocketList, type NormalizedDocket } from '../../lib/docket';
 import { useAuth } from '../../context/AuthContext';
 
 const STATUS_OPTIONS = [
@@ -19,6 +19,40 @@ const STATUS_OPTIONS = [
   { value: 'REJECTED', label: 'Rejected' },
   { value: 'CLOSED', label: 'Closed' },
 ];
+
+function getActorLabel(actor?: NormalizedDocket['createdBy']): string {
+  return actor?.fullName || actor?.firstName || actor?.username || 'Unknown';
+}
+
+function getExternalSenderLabel(docket: NormalizedDocket): string {
+  return docket.senderName || docket.senderOrganization || getActorLabel(docket.createdBy);
+}
+
+function getRoutingSenderLabel(docket: NormalizedDocket): string {
+  return getActorLabel(docket.currentAssignment?.assignedBy || docket.createdBy);
+}
+
+function getCurrentHolderLabel(docket: NormalizedDocket): string {
+  const holder = docket.currentAssignee || docket.currentAssignment?.assignedTo;
+  return holder ? getActorLabel(holder) : 'Awaiting assignment';
+}
+
+function getLocationLabel(docket: NormalizedDocket): string {
+  return docket.currentDepartment?.name
+    || docket.currentAssignment?.assignedToDepartment?.name
+    || 'Not assigned';
+}
+
+function getProgressLabel(docket: NormalizedDocket): string {
+  if (docket.progressSummary) {
+    return docket.progressSummary;
+  }
+
+  return docket.status
+    .replaceAll('_', ' ')
+    .toLowerCase()
+    .replace(/^\w/, (value) => value.toUpperCase());
+}
 
 export default function DocketsList() {
   const { hasPermission } = useAuth();
@@ -166,7 +200,43 @@ export default function DocketsList() {
                           {docket.description}
                         </p>
                       )}
-                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                      <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            From
+                          </p>
+                          <p className="truncate font-medium">{getExternalSenderLabel(docket)}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Sent By
+                          </p>
+                          <p className="truncate font-medium">{getRoutingSenderLabel(docket)}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Current Holder
+                          </p>
+                          <p className="truncate font-medium">{getCurrentHolderLabel(docket)}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Location
+                          </p>
+                          <p className="truncate font-medium">{getLocationLabel(docket)}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 rounded-md bg-muted/60 px-3 py-2 text-sm">
+                        <span className="font-medium">Progress:</span>{' '}
+                        {getProgressLabel(docket)}
+                      </div>
+                      {(docket.currentAssignment?.instructions || docket.currentAssignment?.comments) && (
+                        <div className="mt-2 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">Instruction:</span>{' '}
+                          {docket.currentAssignment?.instructions || docket.currentAssignment?.comments}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
                         <span>
                           Created by {docket.createdBy?.firstName || docket.createdBy?.username || 'Unknown'}
                         </span>

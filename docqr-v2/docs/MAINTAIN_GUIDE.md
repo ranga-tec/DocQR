@@ -117,10 +117,27 @@ Core behavior currently in `DocketService`:
 - Docket number generation by type/year (fallback `DOC-YYYY-NNNNN`)
 - QR token generation + expiry metadata
 - Assignee tracking + assignment records on forward
+- Current department resolution from the direct department target or the assignee's primary department
+- Current progress summary derivation from docket status and latest assignment
 - Soft-delete for dockets/attachments
 - Basic comments and attachment lifecycle
 
 State transitions are available via controller endpoints, but transition policy logic is not fully centralized in a declarative engine yet.
+
+Current workflow visibility contract:
+
+- `GET /api/v1/dockets` now returns enough metadata for list-level progress tracking:
+  - external sender fields
+  - current assignee
+  - current department/location
+  - latest assignment summary (`currentAssignment`)
+  - derived `progressSummary`
+- `POST /api/v1/dockets/{id}/forward` accepts:
+  - `toUserId`
+  - `toDepartmentId`
+  - `instructions`
+  - `comments`
+- `GET /api/v1/dockets/{id}/history` now returns real assignment and acceptance events rather than a single placeholder event.
 
 ## 3.6 Scanner + OCR Status
 
@@ -188,6 +205,23 @@ Some frontend wrappers reference endpoints not implemented in .NET backend yet (
 2. `src/lib/api.ts` wrappers
 
 and then run smoke tests for each affected page.
+
+## 4.4 Docket UX Notes
+
+Current docket UI behavior in `apps/web`:
+
+- `pages/dockets/DocketDetail.tsx`
+  - exposes both `QR Code` and `Print QR`
+  - `Print QR` fetches the QR image and opens the browser print dialog without requiring the preview modal first
+  - shows current department/location, sender chain, and progress summary
+- `pages/dockets/DocketsList.tsx`
+  - shows operational progress fields directly in the list card so users can tell:
+    - where the docket is
+    - who sent it
+    - who is currently holding it
+    - what action is currently expected
+
+If these fields disappear from the UI, verify the backend docket DTO mapping before changing the frontend layout.
 
 ## 5. Database and Migration Strategy
 

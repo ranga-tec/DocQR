@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { docketsApi } from '../../lib/api';
@@ -37,6 +37,15 @@ interface CommentNode {
   replies?: CommentNode[];
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 export default function DocketDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -44,6 +53,8 @@ export default function DocketDetail() {
   const { hasPermission } = useAuth();
   const [showQr, setShowQr] = useState(false);
   const [qrImage, setQrImage] = useState<string | null>(null);
+  const [isQrLoading, setIsQrLoading] = useState(false);
+  const [isQrPrinting, setIsQrPrinting] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [showForwardModal, setShowForwardModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -60,6 +71,14 @@ export default function DocketDetail() {
   const canDeleteAttachment = canEditAttachment;
   const canForwardDocket = hasPermission('docket:forward');
   const canCommentDocket = hasPermission('docket:comment');
+
+  useEffect(() => {
+    return () => {
+      if (qrImage) {
+        URL.revokeObjectURL(qrImage);
+      }
+    };
+  }, [qrImage]);
 
   const { data: docket, isLoading } = useQuery({
     queryKey: ['docket', id],
@@ -255,15 +274,122 @@ export default function DocketDetail() {
     }
   };
 
+  const getQrImageUrl = async () => {
+    if (!id) {
+      throw new Error('Missing docket id');
+    }
+
+    if (qrImage) {
+      return qrImage;
+    }
+
+    const response = await docketsApi.getQrCode(id);
+    const url = URL.createObjectURL(response.data);
+    setQrImage(url);
+    return url;
+  };
+
   const loadQrCode = async () => {
-    if (!id) return;
+    setIsQrLoading(true);
     try {
-      const response = await docketsApi.getQrCode(id);
-      const url = URL.createObjectURL(response.data);
-      setQrImage(url);
+      await getQrImageUrl();
       setShowQr(true);
-    } catch {
-      console.error('Failed to load QR code');
+    } catch (error) {
+      console.error('Failed to load QR code', error);
+    } finally {
+      setIsQrLoading(false);
+    }
+  };
+
+  const printQrCode = async () => {
+    setIsQrPrinting(true);
+    try {
+      const qrUrl = await getQrImageUrl();
+      const printFrame = document.createElement('iframe');
+      printFrame.style.position = 'fixed';
+      printFrame.style.right = '0';
+      printFrame.style.bottom = '0';
+      printFrame.style.width = '0';
+      printFrame.style.height = '0';
+      printFrame.style.border = '0';
+
+      const cleanup = () => {
+        window.setTimeout(() => {
+          printFrame.remove();
+        }, 0);
+      };
+
+      document.body.appendChild(printFrame);
+
+      const printWindow = printFrame.contentWindow;
+      const printDocument = printWindow?.document;
+
+      if (!printWindow || !printDocument) {
+        cleanup();
+        throw new Error('Unable to create print window');
+      }
+
+      printWindow.addEventListener('afterprint', cleanup, { once: true });
+
+      printDocument.open();
+      printDocument.write(`
+        <!doctype html>
+        <html>
+          <head>
+            <title>Print QR</title>
+            <style>
+              body {
+                margin: 0;
+                font-family: Arial, sans-serif;
+                color: #111827;
+              }
+              main {
+                min-height: 100vh;
+                display: grid;
+                place-items: center;
+                padding: 32px;
+              }
+              .sheet {
+                text-align: center;
+              }
+              h1 {
+                margin: 0 0 8px;
+                font-size: 22px;
+              }
+              p {
+                margin: 0 0 24px;
+                color: #4b5563;
+                font-size: 14px;
+              }
+              img {
+                width: 320px;
+                height: 320px;
+                object-fit: contain;
+              }
+            </style>
+          </head>
+          <body>
+            <main>
+              <section class="sheet">
+                <h1>${escapeHtml(d.subject)}</h1>
+                <p>${escapeHtml(d.docketNumber)}</p>
+                <img
+                  src="${qrUrl}"
+                  alt="QR Code"
+                  onload="window.focus(); setTimeout(function () { window.print(); }, 150);"
+                />
+              </section>
+            </main>
+          </body>
+        </html>
+      `);
+      printDocument.close();
+
+      window.setTimeout(cleanup, 3000);
+    } catch (error) {
+      console.error('Failed to print QR code', error);
+    } finally {
+      setIsQrPrinting(false);
     }
   };
 
@@ -383,12 +509,18 @@ export default function DocketDetail() {
           </div>
           <h1 className="text-2xl font-bold mt-2">{d.subject}</h1>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={loadQrCode}>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={loadQrCode} disabled={isQrLoading || isQrPrinting}>
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
             </svg>
-            QR Code
+            {isQrLoading ? 'Loading QR...' : 'QR Code'}
+          </Button>
+          <Button variant="outline" onClick={printQrCode} disabled={isQrPrinting || isQrLoading}>
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 9V4h12v5M6 14h12M8 18h8M8 14V9h8v5" />
+            </svg>
+            {isQrPrinting ? 'Preparing Print...' : 'Print QR'}
           </Button>
         </div>
       </div>
@@ -402,9 +534,14 @@ export default function DocketDetail() {
             <p className="text-sm text-muted-foreground mt-2 text-center">
               Scan to view this docket
             </p>
-            <Button className="w-full mt-4" onClick={() => setShowQr(false)}>
-              Close
-            </Button>
+            <div className="mt-4 flex gap-2">
+              <Button className="flex-1" variant="outline" onClick={printQrCode} disabled={isQrPrinting}>
+                {isQrPrinting ? 'Preparing Print...' : 'Print'}
+              </Button>
+              <Button className="flex-1" onClick={() => setShowQr(false)}>
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -446,10 +583,30 @@ export default function DocketDetail() {
                     </span>
                   </div>
                 )}
+                {d.currentDepartment && (
+                  <div>
+                    <span className="text-muted-foreground">Location:</span>
+                    <span className="ml-2">{d.currentDepartment.name}</span>
+                  </div>
+                )}
+                {d.currentAssignment?.assignedBy && (
+                  <div>
+                    <span className="text-muted-foreground">Sent by:</span>
+                    <span className="ml-2">
+                      {d.currentAssignment.assignedBy.firstName || d.currentAssignment.assignedBy.username}
+                    </span>
+                  </div>
+                )}
                 {d.receivedDate && (
                   <div>
                     <span className="text-muted-foreground">Received:</span>
                     <span className="ml-2">{formatDate(d.receivedDate)}</span>
+                  </div>
+                )}
+                {d.progressSummary && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">Progress:</span>
+                    <span className="ml-2 font-medium">{d.progressSummary}</span>
                   </div>
                 )}
               </div>
@@ -929,20 +1086,30 @@ export default function DocketDetail() {
                   {history?.data?.slice(0, 5).map((entry: {
                     id: string;
                     action: string;
-                    createdAt: string;
+                    description?: string;
+                    notes?: string;
+                    performedAt: string;
                     performedBy: { firstName?: string; username: string };
                   }) => (
                     <li key={entry.id} className="flex gap-3">
                       <div className="w-2 h-2 mt-2 rounded-full bg-primary flex-shrink-0" />
                       <div>
-                        <p className="text-sm">
-                          <span className="font-medium">{entry.action}</span>
-                          {' by '}
-                          {entry.performedBy?.firstName || entry.performedBy?.username}
+                        <p className="text-sm font-medium">
+                          {entry.description || entry.action}
                         </p>
+                        {entry.performedBy && (
+                          <p className="text-xs text-muted-foreground">
+                            By {entry.performedBy.firstName || entry.performedBy.username}
+                          </p>
+                        )}
                         <p className="text-xs text-muted-foreground">
-                          {formatDate(entry.createdAt)}
+                          {formatDate(entry.performedAt)}
                         </p>
+                        {entry.notes && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {entry.notes}
+                          </p>
+                        )}
                       </div>
                     </li>
                   ))}

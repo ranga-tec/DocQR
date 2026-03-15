@@ -23,6 +23,7 @@ public interface IDocketService
     Task<DocketResponseDto?> ForwardDocketAsync(string id, ForwardDocketDto dto, string userId);
     Task<DocketResponseDto?> AcceptDocketAsync(string id, string userId, string? notes = null);
     Task<DocketResponseDto?> CloseDocketAsync(string id, string userId);
+    Task<List<DocketHistoryDto>> GetHistoryAsync(string docketId, string userId, bool includeAll = false);
     Task<string> GenerateQrTokenAsync(string docketId, int expirationHours = 24);
     Task<List<AttachmentDto>> GetAttachmentsAsync(string docketId);
     Task<AttachmentDto> AddAttachmentAsync(string docketId, byte[] fileData, string fileName, string mimeType, string userId);
@@ -65,7 +66,10 @@ public class DocketService : IDocketService
         var query = _context.Dockets
             .Include(d => d.DocketType)
             .Include(d => d.Creator)
+            .Include(d => d.CurrentDepartment)
             .Include(d => d.CurrentAssignee)
+                .ThenInclude(user => user!.UserDepartments)
+                    .ThenInclude(userDepartment => userDepartment.Department)
             .Where(d => d.DeletedAt == null);
 
         // Restrict visibility unless explicitly elevated.
@@ -106,7 +110,16 @@ public class DocketService : IDocketService
             .Take(pageSize)
             .ToListAsync();
 
-        var items = dockets.Select(MapToDto).ToList();
+        var docketIds = dockets.Select(d => d.Id).ToList();
+        var latestAssignments = await GetLatestAssignmentsAsync(docketIds);
+        var counts = await GetDocketCountsAsync(docketIds);
+
+        var items = dockets
+            .Select(docket => MapToDto(
+                docket,
+                latestAssignments.GetValueOrDefault(docket.Id),
+                counts.GetValueOrDefault(docket.Id)))
+            .ToList();
 
         return new DocketListResponseDto
         {
@@ -123,7 +136,10 @@ public class DocketService : IDocketService
         var query = _context.Dockets
             .Include(d => d.DocketType)
             .Include(d => d.Creator)
+            .Include(d => d.CurrentDepartment)
             .Include(d => d.CurrentAssignee)
+                .ThenInclude(user => user!.UserDepartments)
+                    .ThenInclude(userDepartment => userDepartment.Department)
             .Where(d => d.Id == id && d.DeletedAt == null);
 
         if (!includeAll)
@@ -135,8 +151,15 @@ public class DocketService : IDocketService
         }
 
         var docket = await query.FirstOrDefaultAsync();
+        if (docket == null)
+        {
+            return null;
+        }
 
-        return docket != null ? MapToDto(docket) : null;
+        var latestAssignment = await GetLatestAssignmentAsync(docket.Id);
+        var counts = (await GetDocketCountsAsync([docket.Id])).GetValueOrDefault(docket.Id);
+
+        return MapToDto(docket, latestAssignment, counts);
     }
 
     public async Task<DocketResponseDto?> GetDocketByQrTokenAsync(string qrToken)
@@ -144,13 +167,24 @@ public class DocketService : IDocketService
         var docket = await _context.Dockets
             .Include(d => d.DocketType)
             .Include(d => d.Creator)
+            .Include(d => d.CurrentDepartment)
             .Include(d => d.CurrentAssignee)
+                .ThenInclude(user => user!.UserDepartments)
+                    .ThenInclude(userDepartment => userDepartment.Department)
             .FirstOrDefaultAsync(d =>
                 d.QrToken == qrToken &&
                 d.DeletedAt == null &&
                 (d.QrTokenExpiresAt == null || d.QrTokenExpiresAt > DateTime.UtcNow));
 
-        return docket != null ? MapToDto(docket) : null;
+        if (docket == null)
+        {
+            return null;
+        }
+
+        var latestAssignment = await GetLatestAssignmentAsync(docket.Id);
+        var counts = (await GetDocketCountsAsync([docket.Id])).GetValueOrDefault(docket.Id);
+
+        return MapToDto(docket, latestAssignment, counts);
     }
 
     public async Task<DocketResponseDto> CreateDocketAsync(CreateDocketDto dto, string userId)
@@ -212,6 +246,7 @@ public class DocketService : IDocketService
             // Audit
             CreatedBy = userId,
             CurrentAssigneeId = assigneeId,
+            CurrentDepartmentId = await ResolveDepartmentIdAsync(assigneeId, null),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -262,8 +297,15 @@ public class DocketService : IDocketService
         await _context.Entry(docket).Reference(d => d.DocketType).LoadAsync();
         await _context.Entry(docket).Reference(d => d.Creator).LoadAsync();
         await _context.Entry(docket).Reference(d => d.CurrentAssignee).LoadAsync();
+        if (docket.CurrentDepartmentId != null)
+        {
+            await _context.Entry(docket).Reference(d => d.CurrentDepartment).LoadAsync();
+        }
 
-        return MapToDto(docket);
+        var latestAssignment = await GetLatestAssignmentAsync(docket.Id);
+        var counts = (await GetDocketCountsAsync([docket.Id])).GetValueOrDefault(docket.Id);
+
+        return MapToDto(docket, latestAssignment, counts);
     }
 
     public async Task<DocketResponseDto?> UpdateDocketAsync(string id, UpdateDocketDto dto, string userId)
@@ -312,6 +354,11 @@ public class DocketService : IDocketService
 
     public async Task<DocketResponseDto?> ForwardDocketAsync(string id, ForwardDocketDto dto, string userId)
     {
+        if (string.IsNullOrWhiteSpace(dto.ToUserId) && string.IsNullOrWhiteSpace(dto.ToDepartmentId))
+        {
+            throw new InvalidOperationException("Forward target is required.");
+        }
+
         var docket = await _context.Dockets
             .FirstOrDefaultAsync(d => d.Id == id && d.DeletedAt == null);
 
@@ -329,9 +376,12 @@ public class DocketService : IDocketService
             DocketId = docket.Id,
             AssignedFrom = userId,
             AssignedTo = dto.ToUserId,
+            AssignedToDepartmentId = dto.ToDepartmentId,
             AssignmentType = dto.Action ?? "forward",
-            Comments = dto.Comments,
+            Instructions = dto.Instructions,
+            Comments = dto.Comments ?? dto.Instructions,
             SequenceNumber = lastSeq + 1,
+            Status = "pending",
             AssignedAt = DateTime.UtcNow
         };
 
@@ -358,6 +408,7 @@ public class DocketService : IDocketService
 
         // Update docket
         docket.CurrentAssigneeId = dto.ToUserId;
+        docket.CurrentDepartmentId = await ResolveDepartmentIdAsync(dto.ToUserId, dto.ToDepartmentId);
         docket.Status = "forwarded";
         docket.UpdatedAt = DateTime.UtcNow;
         docket.UpdatedBy = userId;
@@ -372,8 +423,15 @@ public class DocketService : IDocketService
         await _context.Entry(docket).Reference(d => d.DocketType).LoadAsync();
         await _context.Entry(docket).Reference(d => d.Creator).LoadAsync();
         await _context.Entry(docket).Reference(d => d.CurrentAssignee).LoadAsync();
+        if (docket.CurrentDepartmentId != null)
+        {
+            await _context.Entry(docket).Reference(d => d.CurrentDepartment).LoadAsync();
+        }
 
-        return MapToDto(docket);
+        var latestAssignment = await GetLatestAssignmentAsync(docket.Id);
+        var counts = (await GetDocketCountsAsync([docket.Id])).GetValueOrDefault(docket.Id);
+
+        return MapToDto(docket, latestAssignment, counts);
     }
 
     public async Task<DocketResponseDto?> AcceptDocketAsync(string id, string userId, string? notes = null)
@@ -407,6 +465,7 @@ public class DocketService : IDocketService
         }
 
         docket.Status = "in_review";
+        docket.CurrentDepartmentId = await ResolveDepartmentIdAsync(userId, docket.CurrentDepartmentId);
         docket.UpdatedAt = DateTime.UtcNow;
         docket.UpdatedBy = userId;
 
@@ -415,8 +474,15 @@ public class DocketService : IDocketService
         await _context.Entry(docket).Reference(d => d.DocketType).LoadAsync();
         await _context.Entry(docket).Reference(d => d.Creator).LoadAsync();
         await _context.Entry(docket).Reference(d => d.CurrentAssignee).LoadAsync();
+        if (docket.CurrentDepartmentId != null)
+        {
+            await _context.Entry(docket).Reference(d => d.CurrentDepartment).LoadAsync();
+        }
 
-        return MapToDto(docket);
+        var latestAssignment = await GetLatestAssignmentAsync(docket.Id);
+        var counts = (await GetDocketCountsAsync([docket.Id])).GetValueOrDefault(docket.Id);
+
+        return MapToDto(docket, latestAssignment, counts);
     }
 
     public async Task<DocketResponseDto?> CloseDocketAsync(string id, string userId)
@@ -451,8 +517,119 @@ public class DocketService : IDocketService
         await _context.Entry(docket).Reference(d => d.DocketType).LoadAsync();
         await _context.Entry(docket).Reference(d => d.Creator).LoadAsync();
         await _context.Entry(docket).Reference(d => d.CurrentAssignee).LoadAsync();
+        if (docket.CurrentDepartmentId != null)
+        {
+            await _context.Entry(docket).Reference(d => d.CurrentDepartment).LoadAsync();
+        }
 
-        return MapToDto(docket);
+        var latestAssignment = await GetLatestAssignmentAsync(docket.Id);
+        var counts = (await GetDocketCountsAsync([docket.Id])).GetValueOrDefault(docket.Id);
+
+        return MapToDto(docket, latestAssignment, counts);
+    }
+
+    public async Task<List<DocketHistoryDto>> GetHistoryAsync(string docketId, string userId, bool includeAll = false)
+    {
+        var docketQuery = _context.Dockets
+            .Include(d => d.Creator)
+            .Include(d => d.Closer)
+            .Where(d => d.Id == docketId && d.DeletedAt == null);
+
+        if (!includeAll)
+        {
+            docketQuery = docketQuery.Where(d =>
+                d.CreatedBy == userId ||
+                d.CurrentAssigneeId == userId ||
+                d.Assignments.Any(a => a.AssignedTo == userId));
+        }
+
+        var docket = await docketQuery.FirstOrDefaultAsync();
+        if (docket == null)
+        {
+            return [];
+        }
+
+        var assignments = await _context.DocketAssignments
+            .Include(a => a.AssignedByUser)
+            .Include(a => a.AssignedToDepartment)
+            .Include(a => a.AssignedToUser)
+            .Where(a => a.DocketId == docketId)
+            .OrderBy(a => a.SequenceNumber)
+            .ThenBy(a => a.AssignedAt)
+            .ToListAsync();
+
+        var history = new List<DocketHistoryDto>
+        {
+            new()
+            {
+                Id = $"{docket.Id}:created",
+                Action = "created",
+                Description = "Docket created",
+                PerformedBy = BuildUserSummary(docket.Creator),
+                Status = docket.Status,
+                PerformedAt = docket.CreatedAt
+            }
+        };
+
+        foreach (var assignment in assignments)
+        {
+            var assignedTo = BuildUserSummary(assignment.AssignedToUser);
+            var assignedDepartment = BuildDepartmentSummary(assignment.AssignedToDepartment);
+            var targetLabel = assignedTo?.FullName
+                ?? assignedTo?.Username
+                ?? assignedDepartment?.Name
+                ?? "recipient";
+
+            history.Add(new DocketHistoryDto
+            {
+                Id = $"{assignment.Id}:assigned",
+                Action = string.IsNullOrWhiteSpace(assignment.AssignmentType)
+                    ? "forwarded"
+                    : assignment.AssignmentType,
+                Description = $"Sent to {targetLabel}",
+                PerformedBy = BuildUserSummary(assignment.AssignedByUser),
+                AssignedTo = assignedTo,
+                Department = assignedDepartment,
+                Status = assignment.Status,
+                Notes = !string.IsNullOrWhiteSpace(assignment.Instructions)
+                    ? assignment.Instructions
+                    : assignment.Comments,
+                PerformedAt = assignment.AssignedAt
+            });
+
+            if (assignment.AcceptedAt.HasValue)
+            {
+                history.Add(new DocketHistoryDto
+                {
+                    Id = $"{assignment.Id}:accepted",
+                    Action = "accepted",
+                    Description = $"{targetLabel} accepted the docket",
+                    PerformedBy = assignedTo,
+                    AssignedTo = assignedTo,
+                    Department = assignedDepartment,
+                    Status = assignment.Status,
+                    Notes = assignment.Comments,
+                    PerformedAt = assignment.AcceptedAt.Value
+                });
+            }
+        }
+
+        if (docket.ClosedAt.HasValue)
+        {
+            history.Add(new DocketHistoryDto
+            {
+                Id = $"{docket.Id}:closed",
+                Action = "closed",
+                Description = "Docket closed",
+                PerformedBy = BuildUserSummary(docket.Closer),
+                Status = docket.Status,
+                PerformedAt = docket.ClosedAt.Value
+            });
+        }
+
+        return history
+            .OrderByDescending(entry => entry.PerformedAt)
+            .ToList();
     }
 
     public async Task<string> GenerateQrTokenAsync(string docketId, int expirationHours = 24)
@@ -639,8 +816,13 @@ public class DocketService : IDocketService
         };
     }
 
-    private DocketResponseDto MapToDto(Docket docket)
+    private DocketResponseDto MapToDto(
+        Docket docket,
+        DocketAssignment? latestAssignment = null,
+        DocketAggregateCounts? counts = null)
     {
+        var currentDepartment = ResolveCurrentDepartment(docket, latestAssignment);
+
         return new DocketResponseDto
         {
             Id = docket.Id.ToString(),
@@ -654,6 +836,12 @@ public class DocketService : IDocketService
             QrTokenExpiresAt = docket.QrTokenExpiresAt,
             CreatedAt = docket.CreatedAt,
             UpdatedAt = docket.UpdatedAt,
+            SenderName = docket.SenderName,
+            SenderOrganization = docket.SenderOrganization,
+            SenderEmail = docket.SenderEmail,
+            SenderPhone = docket.SenderPhone,
+            SenderAddress = docket.SenderAddress,
+            ReceivedDate = docket.ReceivedDate,
             DocketType = docket.DocketType != null ? new DocketTypeDto
             {
                 Id = docket.DocketType.Id.ToString(),
@@ -661,18 +849,201 @@ public class DocketService : IDocketService
                 Description = docket.DocketType.Description,
                 Prefix = docket.DocketType.Code
             } : null,
-            Creator = docket.Creator != null ? new UserSummaryDto
-            {
-                Id = docket.Creator.Id.ToString(),
-                Username = docket.Creator.Username,
-                FullName = docket.Creator.FullName
-            } : null,
-            CurrentAssignee = docket.CurrentAssignee != null ? new UserSummaryDto
-            {
-                Id = docket.CurrentAssignee.Id.ToString(),
-                Username = docket.CurrentAssignee.Username,
-                FullName = docket.CurrentAssignee.FullName
-            } : null
+            Creator = BuildUserSummary(docket.Creator),
+            CurrentAssignee = BuildUserSummary(docket.CurrentAssignee),
+            CurrentDepartment = BuildDepartmentSummary(currentDepartment),
+            CurrentAssignment = BuildAssignmentSummary(latestAssignment),
+            ProgressSummary = BuildProgressSummary(docket, latestAssignment),
+            AttachmentCount = counts?.AttachmentCount ?? 0,
+            CommentCount = counts?.CommentCount ?? 0
         };
+    }
+
+    private async Task<string?> ResolveDepartmentIdAsync(string? userId, string? departmentId)
+    {
+        if (!string.IsNullOrWhiteSpace(departmentId))
+        {
+            return departmentId;
+        }
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return null;
+        }
+
+        return await _context.UserDepartments
+            .Where(assignment => assignment.UserId == userId)
+            .OrderByDescending(assignment => assignment.IsPrimary)
+            .ThenBy(assignment => assignment.AssignedAt)
+            .Select(assignment => assignment.DepartmentId)
+            .FirstOrDefaultAsync();
+    }
+
+    private async Task<Dictionary<string, DocketAssignment>> GetLatestAssignmentsAsync(IReadOnlyCollection<string> docketIds)
+    {
+        if (docketIds.Count == 0)
+        {
+            return new Dictionary<string, DocketAssignment>();
+        }
+
+        var assignments = await _context.DocketAssignments
+            .Include(a => a.AssignedByUser)
+            .Include(a => a.AssignedToDepartment)
+            .Include(a => a.AssignedToUser)
+                .ThenInclude(user => user!.UserDepartments)
+                    .ThenInclude(userDepartment => userDepartment.Department)
+            .Where(a => docketIds.Contains(a.DocketId))
+            .OrderByDescending(a => a.SequenceNumber)
+            .ThenByDescending(a => a.AssignedAt)
+            .ToListAsync();
+
+        return assignments
+            .GroupBy(assignment => assignment.DocketId)
+            .ToDictionary(group => group.Key, group => group.First());
+    }
+
+    private async Task<DocketAssignment?> GetLatestAssignmentAsync(string docketId)
+    {
+        return (await GetLatestAssignmentsAsync([docketId])).GetValueOrDefault(docketId);
+    }
+
+    private async Task<Dictionary<string, DocketAggregateCounts>> GetDocketCountsAsync(IReadOnlyCollection<string> docketIds)
+    {
+        var result = docketIds.ToDictionary(id => id, _ => new DocketAggregateCounts());
+        if (docketIds.Count == 0)
+        {
+            return result;
+        }
+
+        var attachmentCounts = await _context.DocketAttachments
+            .Where(attachment => docketIds.Contains(attachment.DocketId) && attachment.DeletedAt == null)
+            .GroupBy(attachment => attachment.DocketId)
+            .Select(group => new { DocketId = group.Key, Count = group.Count() })
+            .ToListAsync();
+
+        foreach (var item in attachmentCounts)
+        {
+            result[item.DocketId].AttachmentCount = item.Count;
+        }
+
+        var commentCounts = await _context.DocketComments
+            .Where(comment => docketIds.Contains(comment.DocketId))
+            .GroupBy(comment => comment.DocketId)
+            .Select(group => new { DocketId = group.Key, Count = group.Count() })
+            .ToListAsync();
+
+        foreach (var item in commentCounts)
+        {
+            result[item.DocketId].CommentCount = item.Count;
+        }
+
+        return result;
+    }
+
+    private static UserSummaryDto? BuildUserSummary(User? user)
+    {
+        return user == null
+            ? null
+            : new UserSummaryDto
+            {
+                Id = user.Id.ToString(),
+                Username = user.Username,
+                FullName = user.FullName
+            };
+    }
+
+    private static DepartmentSummaryDto? BuildDepartmentSummary(Department? department)
+    {
+        return department == null
+            ? null
+            : new DepartmentSummaryDto
+            {
+                Id = department.Id.ToString(),
+                Name = department.Name,
+                Code = department.Code
+            };
+    }
+
+    private static DocketAssignmentSummaryDto? BuildAssignmentSummary(DocketAssignment? assignment)
+    {
+        return assignment == null
+            ? null
+            : new DocketAssignmentSummaryDto
+            {
+                Id = assignment.Id,
+                Status = assignment.Status,
+                AssignmentType = assignment.AssignmentType,
+                Instructions = assignment.Instructions,
+                Comments = assignment.Comments,
+                ExpectedAction = assignment.ExpectedAction,
+                ActionTaken = assignment.Action,
+                AssignedAt = assignment.AssignedAt,
+                AcceptedAt = assignment.AcceptedAt,
+                CompletedAt = assignment.CompletedAt,
+                AssignedBy = BuildUserSummary(assignment.AssignedByUser),
+                AssignedTo = BuildUserSummary(assignment.AssignedToUser),
+                AssignedToDepartment = BuildDepartmentSummary(assignment.AssignedToDepartment)
+            };
+    }
+
+    private static Department? ResolveCurrentDepartment(Docket docket, DocketAssignment? latestAssignment)
+    {
+        return docket.CurrentDepartment
+            ?? latestAssignment?.AssignedToDepartment
+            ?? GetPrimaryDepartment(latestAssignment?.AssignedToUser)
+            ?? GetPrimaryDepartment(docket.CurrentAssignee);
+    }
+
+    private static Department? GetPrimaryDepartment(User? user)
+    {
+        return user?.UserDepartments
+            .OrderByDescending(assignment => assignment.IsPrimary)
+            .ThenBy(assignment => assignment.AssignedAt)
+            .Select(assignment => assignment.Department)
+            .FirstOrDefault();
+    }
+
+    private static string BuildProgressSummary(Docket docket, DocketAssignment? latestAssignment)
+    {
+        if (!string.IsNullOrWhiteSpace(latestAssignment?.ExpectedAction))
+        {
+            return $"Waiting for {HumanizeValue(latestAssignment.ExpectedAction!)}";
+        }
+
+        return docket.Status.ToLowerInvariant() switch
+        {
+            "pending_approval" => "Waiting for approval",
+            "approved" => "Approved",
+            "rejected" => "Rejected",
+            "closed" => "Closed",
+            "archived" => "Archived",
+            "in_review" => "Under review",
+            "forwarded" when latestAssignment?.AssignedToDepartment != null && latestAssignment.AssignedToUser == null => "Awaiting department review",
+            "forwarded" => "Awaiting recipient review",
+            "open" => "Open for processing",
+            _ => HumanizeValue(docket.Status)
+        };
+    }
+
+    private static string HumanizeValue(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "In progress";
+        }
+
+        var normalized = value.Trim().Replace("_", " ").ToLowerInvariant();
+        return normalized.Length switch
+        {
+            0 => "In progress",
+            1 => normalized.ToUpperInvariant(),
+            _ => char.ToUpperInvariant(normalized[0]) + normalized[1..]
+        };
+    }
+
+    private sealed class DocketAggregateCounts
+    {
+        public int AttachmentCount { get; set; }
+        public int CommentCount { get; set; }
     }
 }

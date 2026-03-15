@@ -188,15 +188,22 @@ public class DocketsController : ControllerBase
             return forbidden;
         }
 
-        var userId = GetCurrentUserId();
-        var docket = await _docketService.ForwardDocketAsync(id, dto, userId);
-
-        if (docket == null)
+        try
         {
-            return NotFound(new { message = "Docket not found" });
-        }
+            var userId = GetCurrentUserId();
+            var docket = await _docketService.ForwardDocketAsync(id, dto, userId);
 
-        return Ok(docket);
+            if (docket == null)
+            {
+                return NotFound(new { message = "Docket not found" });
+            }
+
+            return Ok(docket);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPost("{id}/accept")]
@@ -357,18 +364,7 @@ public class DocketsController : ControllerBase
             return NotFound(new { message = "Docket not found" });
         }
 
-        // Return assignment history as workflow history
-        var history = new List<DocketHistoryDto>
-        {
-            new()
-            {
-                Id = Guid.NewGuid().ToString(),
-                Action = "created",
-                Description = "Docket created",
-                PerformedBy = docket.Creator,
-                PerformedAt = docket.CreatedAt
-            }
-        };
+        var history = await _docketService.GetHistoryAsync(id, userId, IsElevatedUser());
 
         return Ok(history);
     }
@@ -474,15 +470,6 @@ public class DocketsController : ControllerBase
             _ => false
         };
     }
-}
-
-public class DocketHistoryDto
-{
-    public string Id { get; set; } = string.Empty;
-    public string Action { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-    public UserSummaryDto? PerformedBy { get; set; }
-    public DateTime PerformedAt { get; set; }
 }
 
 public class DocketActionDto

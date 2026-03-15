@@ -103,6 +103,14 @@ Functional check:
   - `/api/v1/admin/reports/sla`
   - `/api/v1/admin/reports/workload`
   - `/api/v1/admin/reports/turnaround`
+- Verify docket detail QR actions:
+  - open any docket detail page
+  - confirm both `QR Code` and `Print QR` actions are visible
+  - confirm `Print QR` opens the browser print dialog without requiring the preview modal first
+- Verify docket list progress metadata:
+  - open `/dockets`
+  - confirm each populated card shows current holder, sender, location/department, and progress summary
+  - forward a test docket with `instructions` and confirm the instruction appears in both list/detail views and history
 
 ## 5. Database Bootstrap / Repair
 

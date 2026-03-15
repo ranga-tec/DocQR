@@ -6,6 +6,12 @@ export interface DocketActor {
   fullName?: string;
 }
 
+export interface DocketDepartment {
+  id?: string;
+  name?: string;
+  code?: string;
+}
+
 export interface NormalizedDocket {
   id: string;
   docketNumber: string;
@@ -29,10 +35,22 @@ export interface NormalizedDocket {
   creator?: DocketActor;
   createdBy?: DocketActor;
   currentAssignee?: DocketActor;
+  currentDepartment?: DocketDepartment;
+  progressSummary?: string;
   currentAssignment?: {
+    id?: string;
+    status?: string;
+    assignmentType?: string;
     instructions?: string;
+    comments?: string;
+    expectedAction?: string;
+    actionTaken?: string;
     assignedAt?: string;
+    acceptedAt?: string;
+    completedAt?: string;
     assignedBy?: DocketActor;
+    assignedTo?: DocketActor;
+    assignedToDepartment?: DocketDepartment;
   };
   senderName?: string;
   senderOrganization?: string;
@@ -71,6 +89,17 @@ function toActor(input: unknown): DocketActor | undefined {
     firstName,
     lastName: typeof actor.lastName === 'string' ? actor.lastName : undefined,
     fullName,
+  };
+}
+
+function toDepartment(input: unknown): DocketDepartment | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const department = input as Record<string, unknown>;
+
+  return {
+    id: typeof department.id === 'string' ? department.id : undefined,
+    name: typeof department.name === 'string' ? department.name : undefined,
+    code: typeof department.code === 'string' ? department.code : undefined,
   };
 }
 
@@ -120,11 +149,23 @@ export function normalizeDocket(input: unknown): NormalizedDocket {
     creator,
     createdBy,
     currentAssignee: toActor(docket.currentAssignee),
+    currentDepartment: toDepartment(docket.currentDepartment),
+    progressSummary: typeof docket.progressSummary === 'string' ? docket.progressSummary : undefined,
     currentAssignment: currentAssignmentRaw
       ? {
+          id: typeof currentAssignmentRaw.id === 'string' ? currentAssignmentRaw.id : undefined,
+          status: typeof currentAssignmentRaw.status === 'string' ? currentAssignmentRaw.status : undefined,
+          assignmentType: typeof currentAssignmentRaw.assignmentType === 'string' ? currentAssignmentRaw.assignmentType : undefined,
           instructions: typeof currentAssignmentRaw.instructions === 'string' ? currentAssignmentRaw.instructions : undefined,
+          comments: typeof currentAssignmentRaw.comments === 'string' ? currentAssignmentRaw.comments : undefined,
+          expectedAction: typeof currentAssignmentRaw.expectedAction === 'string' ? currentAssignmentRaw.expectedAction : undefined,
+          actionTaken: typeof currentAssignmentRaw.actionTaken === 'string' ? currentAssignmentRaw.actionTaken : undefined,
           assignedAt: typeof currentAssignmentRaw.assignedAt === 'string' ? currentAssignmentRaw.assignedAt : undefined,
+          acceptedAt: typeof currentAssignmentRaw.acceptedAt === 'string' ? currentAssignmentRaw.acceptedAt : undefined,
+          completedAt: typeof currentAssignmentRaw.completedAt === 'string' ? currentAssignmentRaw.completedAt : undefined,
           assignedBy: toActor(currentAssignmentRaw.assignedBy),
+          assignedTo: toActor(currentAssignmentRaw.assignedTo),
+          assignedToDepartment: toDepartment(currentAssignmentRaw.assignedToDepartment),
         }
       : undefined,
     senderName: typeof docket.senderName === 'string' ? docket.senderName : undefined,

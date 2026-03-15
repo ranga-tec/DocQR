@@ -64,6 +64,18 @@ npm run build --workspace=apps/web
 - Scanner endpoint exists at `/api/v1/dockets/{docketId}/attachments/scan`.
 - Digital signature provider integration is still a placeholder path and should be completed with provider adapters.
 
+## Recent Updates (2026-03-15)
+
+- QR print flow:
+  - Added direct `Print QR` action beside the QR preview action on the docket detail page
+  - Users can print a docket QR code without first opening the QR preview modal
+- Docket progress visibility:
+  - Docket list cards now show sender, internal sender, current holder, current department/location, progress summary, and current routing instruction
+  - Docket detail now shows current department, routing sender, progress summary, and richer workflow history
+- Workflow contract alignment:
+  - Forward requests now persist `instructions` and support department targets in the .NET backend
+  - Docket history now reflects actual assignment/accept/close events instead of a placeholder "created only" response
+
 ## Recent Updates (2026-03-08)
 
 - Workflow API parity on .NET backend:
