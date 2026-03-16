@@ -605,7 +605,7 @@ export default function DocketDetail() {
                 )}
                 {d.progressSummary && (
                   <div className="col-span-2">
-                    <span className="text-muted-foreground">Progress:</span>
+                    <span className="text-muted-foreground">Status:</span>
                     <span className="ml-2 font-medium">{d.progressSummary}</span>
                   </div>
                 )}

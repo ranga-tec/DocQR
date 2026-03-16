@@ -227,7 +227,7 @@ export default function DocketsList() {
                         </div>
                       </div>
                       <div className="mt-3 rounded-md bg-muted/60 px-3 py-2 text-sm">
-                        <span className="font-medium">Progress:</span>{' '}
+                        <span className="font-medium">Status:</span>{' '}
                         {getProgressLabel(docket)}
                       </div>
                       {(docket.currentAssignment?.instructions || docket.currentAssignment?.comments) && (
